@@ -1,18 +1,14 @@
 !STILL TO DO:
 !BELIEVE IT IS STILL NOT FINDING CORRECT NUMBER OF ACCEPTABLE PARALLEL ENERGY VALUES 
-!FIND POTENTIAL
-!FILL HMATRIX
-!SOLVE HMATRIX TO FIND EIGENVALUES
 !WRITE EIGENVALUES TO FILE
 
 PROGRAM GRAPHENE_BANDS
 	IMPLICIT NONE
 	
-	REAL(8) :: a0 = 2.46, AngBohr = 0.529177 !angstroms per Bohr Radius and primitive lattice vector for graphene in angstroms
+	REAL(8) :: a0 = 1.42, AngBohr = 0.529177 !angstroms per Bohr Radius and primitive lattice vector for graphene in angstroms
 	REAL(8) :: Pi, T, V, L, ZLength, ev, MaxZEnergy, MaxParaEnergy, ParaEnergy, ZEnergy, GSquare, kz, Area, Volume
 	REAL(8), DIMENSION(3) :: a1, a2, b1, b2, d, G
 	REAL(8), DIMENSION(3) :: Gam, K, MSpatial, KK, cross !Spatial K Points that the bandgap is calculated along.
-	REAL(8), DIMENSION(:,:), allocatable :: HMatrix !Matrix of Hamiltonians
 	INTEGER :: n, m, p, nu, mu, ParaCntr, ZCntr, MatrixDimension !Integers used for loops and storage 
 	
 	REAL, PARAMETER :: hbar = 1, eMass = 1 !allows for the units to be converted with relative ease
@@ -61,10 +57,12 @@ PROGRAM GRAPHENE_BANDS
 	KK(2) = 0.0
 	KK(3) = 0.0
 
+	!cross product of reciprocal lattice vectors
 	cross(1) = b1(2) * b2(3) - b1(3) * b2(2)
 	cross(2) = b1(3) * b2(1) - b1(1) * b2(3)
 	cross(3) = b1(1) * b2(3) - b1(3) * b2(1)	
 	
+	!Magnitude of the cross product gives the area
 	Area = sqrt(cross(1)**2 + cross(2)**2 + cross(3)**2)
 	
 	!user input to define cutoff energies & zlength
@@ -127,37 +125,55 @@ PROGRAM GRAPHENE_BANDS
 	end do
 
 	MatrixDimension = ParaCntr * ZCntr
-	!print *, ParaCntr, ZCntr !used for a check
-	allocate(HMatrix(MatrixDimension, MatrixDimension)
-
+	print *, ParaCntr, ZCntr !used for a check
+	
+	!Will need to put this is some loop that changes the wave vector(gam) by some et amount along spatial K
+	!call get_bands(Gam, MatrixDimension, ZCntr, MaxParaEnergy, Volume, Area, ZLength, a0, b1, b2)
 
 END PROGRAM GRAPHENE_BANDS
 
 
 
 !Have this subroutine write the matrix to a file
-SUBROUTINE get_bands(k,HMatrix, MatrixDimension, ZCntr, MaxParaEnergy, Volume, Area)
+SUBROUTINE get_bands(kparallel, MatrixDimension, ZCntr, MaxParaEnergy, Volume, Area, ZLength, a0, b1, b2, eMass, hbar)
 	IMPLICIT NONE
+	REAL(8), DIMENSION(:,:), allocatable :: HMatrix !Matrix of Hamiltonians
+	REAL(8), DIMENSION(3) :: GNu, GMu, delG, delGSig, G
+	INTEGER :: i, j, l, h, m, n, ierr, sig1, sig2, z
+	REAL(8) :: kznu, kzmu, nConst, Pi, kz, ParaEnergy, omegaBulk, GSquare
+	INTEGER, INTENT(IN) :: MatrixDimension, ZCntr
+	REAL(8), INTENT(IN) :: MaxParaEnergy, Volume, Area, ZLength, a0, hbar, eMass
+	REAL(8), DIMENSION(3), INTENT(IN) :: kparallel, b1, b2
+
+	REAL(8) :: Struct, VQ
+
+    REAL(8), allocatable :: rd(:),re(:),rz(:,:)
+
+	Pi = 4 * atan(1.0)
+
+	allocate(HMatrix(MatrixDimension, MatrixDimension))
+	allocate(rd(MatrixDimension), re(MatrixDimension), rz(MatrixDimension, MatrixDimension))
+
 
 	j = 1
 	kznu = 0
 !finds the potential for the [i,j] matrix element
-	do (i = 1, MatrixDimension)
+	do i = 1, MatrixDimension
 		l = 1
 		GNu = l * b1 + h * b2
 		kznu = kznu + (Pi/ZLength)
 		do while(j <= MatrixDimension)
-			GMu = l*b1 + h * b2
-			do (z = 1, ZCntr)
+			GMu = l * b1 + h * b2
+			do z = 1, ZCntr
 				delG = GNu - GMu
-				delGF = 0
+				delGSig = 0
 				kzmu = z * Pi / ZLength
-				do (sig1 = -1, 1)
-					do (sig2 = -1, 1)
+				do sig1 = -1, 1
+					do sig2 = -1, 1
 						nConst = (sig1 * sig2)/(2 * Volume)
 						
-						delGSig = delG + (sig1 * kznu) + (sig2 * kzmu) 
-						HMatrix(i, j) = HMatrix(i, j) + nConst * (omegaBulk * VQ(delGsig)* Struct(delGsig))
+						delGSig = delG + (sig1 * kznu) + (sig2 * kzmu) !Check that kznu & kzmu are the correct way round
+						HMatrix(i, j) = HMatrix(i, j) + nConst * (omegaBulk * VQ(delGsig) * Struct(delG, ZLength, a0))
 					end do
 				end do
 				j = j + 1
@@ -173,8 +189,6 @@ SUBROUTINE get_bands(k,HMatrix, MatrixDimension, ZCntr, MaxParaEnergy, Volume, A
 
 	end do
 
-
-
 	i = 1
 	n = 1
 	m = 0
@@ -187,9 +201,9 @@ SUBROUTINE get_bands(k,HMatrix, MatrixDimension, ZCntr, MaxParaEnergy, Volume, A
 			GSquare = dot_product(G, G)	
 			ParaEnergy = (GSquare * hbar**2)/(2 * eMass)
 			if (ParaEnergy < MaxParaEnergy) then
-				do (z = 1, ZCntr)
-					kz =
-					HMatrix(i, i) = HMatrix(i, i) + ((abs(kparallel + g)**2) + kz**2)/2) 
+				do z = 1, ZCntr
+					kz = z * Pi / ZLength
+					HMatrix(i, i) = HMatrix(i, i) + ((dot_product(kparallel + G, kparallel + G) + kz**2)/2) 
 					i = i + 1
 				end do
 			end if
@@ -206,25 +220,55 @@ SUBROUTINE get_bands(k,HMatrix, MatrixDimension, ZCntr, MaxParaEnergy, Volume, A
 	
 	end do
 
+	call TRED2(MatrixDimension, MatrixDimension, HMatrix, rd, re, rz)
+	call TQL2(MatrixDimension, MatrixDimension, rd, re, rz, ierr)
+      
+	if(ierr.ne.0)then
+		write(*,*)' ierr= ', ierr
+		stop ' eigenvalue calculation'
+	endif
+
 END SUBROUTINE get_bands
 
 
-FUNCTION VQ(k)
-	
-	REAL(8) b1, b2, b3, b4, v
+REAL(8) FUNCTION VQ(k)
+	IMPLICIT NONE
+	REAL(8), DIMENSION(3), INTENT(IN) :: k
+	REAL(8) b1, b2, b3, b4
 	b1 = 1.781
 	b2 = 1.424
 	b3 = 0.354
 	b4 = 0.938
 
-	v = b1 * ((b3 * dot_product(k,k)) - b2)/(exp((b3 * dot_product(k,k)) - b4) + 1)
+	VQ = b1 * ((b3 * dot_product(k,k)) - b2)/(exp((b3 * dot_product(k,k)) - b4) + 1)
 
-	RETURN v
 END FUNCTION VQ
 
-FUNCTION Struct(k)
+REAL(8) FUNCTION Struct(delG, ZLength, a0)
+	IMPLICIT NONE
+	REAL(8), DIMENSION(3), INTENT(IN) :: delG
+	REAL(8), INTENT(IN) :: ZLength, a0	
+	
+	!This method of e^ix works
+	COMPLEX(8) I
+	REAL(8), DIMENSION(3) :: d, RNeg, RPos
 
+	I = (0,1.0)
+	d(1) = 0.0
+	d(2) = a0
+	d(3) = 0
 
+	RNeg(1) = -d(1)
+	RNeg(2) = -d(2)
+	RNeg(3) = -d(3) + ZLength/2
+
+	RPos(1) = d(1)
+	RPos(2) = d(2)
+	RPos(3) = d(3) + ZLength/2
+	
+	Struct = exp(I * dot_product(delG, RNeg)) + exp(I * dot_product(delG, RPos))
+	!structure factor
+	
 END FUNCTION Struct
 
 
