@@ -6,16 +6,18 @@ PROGRAM GRAPHENE_BANDS
 	IMPLICIT NONE
 	
 	REAL(8) :: a0 = 1.42, AngBohr = 0.529177 !angstroms per Bohr Radius and primitive lattice vector for graphene in angstroms
-	REAL(8) :: Pi, T, V, L, ZLength, ev, MaxZEnergy, MaxParaEnergy, ParaEnergy, ZEnergy, GSquare, kz, Area, Volume
-	REAL(8), DIMENSION(3) :: a1, a2, b1, b2, d, G
+	REAL(8) :: Pi, T, V, L, ZLength, ev, MaxZEnergy, MaxParaEnergy, ParaEnergy, ZEnergy, GSquare, kz, Area, Volume, kD
+	REAL(8), DIMENSION(3) :: a1, a2, b1, b2, d, G, kparallel, kO, kDel
 	REAL(8), DIMENSION(3) :: Gam, K, MSpatial, KK, cross !Spatial K Points that the bandgap is calculated along.
-	INTEGER :: n, m, p, nu, mu, ParaCntr, ZCntr, MatrixDimension !Integers used for loops and storage 
-	
-	REAL, PARAMETER :: hbar = 1, eMass = 1 !allows for the units to be converted with relative ease
+	INTEGER :: n, m, p, ParaCntr, ZCntr, MatrixDimension, minVec, i !Integers used for loops and storage 
+	INTEGER, DIMENSION(:,:), allocatable :: nmAllow	
+
+	REAL(8), PARAMETER :: hbar = 1.0, eMass = 1.0 !allows for the units to be converted with relative ease
 	
 	ev = 27.2114 !Hartrees in an electronvolt
 	Pi = 4.0 * atan(1.0)
 	a0 = a0 / AngBohr	
+	kD = 0
 	
 	!Define real space lattice vectors of graphene
 	a1(1) = (a0 * sqrt(3.0)) / 2.0
@@ -33,7 +35,7 @@ PROGRAM GRAPHENE_BANDS
 
 	!define reciprocal lattice space vectors of graphene
 	b1(1) = (2.0 * Pi) / (sqrt(3.0)*a0)
-	b1(2) = (2.0 * Pi) / (3 * a0)
+	b1(2) = (2.0 * Pi) / (3.0 * a0)
 	b1(3) = 0.0
 	
 	b2(1) = -(2.0 * Pi) / (sqrt(3.0) * a0) 
@@ -60,11 +62,11 @@ PROGRAM GRAPHENE_BANDS
 	!cross product of reciprocal lattice vectors
 	cross(1) = b1(2) * b2(3) - b1(3) * b2(2)
 	cross(2) = b1(3) * b2(1) - b1(1) * b2(3)
-	cross(3) = b1(1) * b2(3) - b1(3) * b2(1)	
-	
+	cross(3) = b1(1) * b2(2) - b1(2) * b2(1)	
 	!Magnitude of the cross product gives the area
-	Area = sqrt(cross(1)**2 + cross(2)**2 + cross(3)**2)
-	
+	Area = abs(a1(1)*a2(2)-a2(1)*a1(2))
+!    write(*,*)Area,sqrt(a1(1)**2+a1(2)**2),sqrt(a2(1)**2+a2(2)**2)
+
 	!user input to define cutoff energies & zlength
 	print *, "Input Max Z Energy in Hartrees: "
 	read *, MaxZEnergy
@@ -82,8 +84,6 @@ PROGRAM GRAPHENE_BANDS
 	ParaEnergy = 0.0
 	ZEnergy = 0.0
 	ZCntr = 0	!stores the number of discrete Z Energies for the given length and Energy cutoff
-	n = 1
-	m = 0
 	GSquare = 0.0
 	do while (ZEnergy < MaxZEnergy)
 
@@ -94,20 +94,33 @@ PROGRAM GRAPHENE_BANDS
 			ZCntr = ZCntr + 1
 		end if
 	end do
-	
+
+	minVec = 0
+
+	do while (ParaEnergy <= MaxParaEnergy)
+		
+		minVec = minVec + 1
+		G = minVec * b1
+		GSquare = dot_product(G, G)
+		ParaEnergy = (GSquare * hbar**2)/(2 * eMass)
+	end do
+
+	m = -minVec - 1
+	n = -minVec - 1
+	ParaEnergy = 0
 
 	!Check if this is correct, may be able to have 0 Energy for Parallel
-	do while (ParaEnergy < MaxParaEnergy)
-		do while (ParaEnergy < MaxParaEnergy)
+	do while (m <= minVec + 1)
+		do while (n <= minVec + 1)
 			
 			G = n * b1 + m * b2
 			GSquare = dot_product(G, G)
-			
 			ParaEnergy = (GSquare * hbar**2)/(2 * eMass)
-			if (ParaEnergy < MaxParaEnergy) then			
+			if (ParaEnergy <= MaxParaEnergy) then			
 				ParaCntr = ParaCntr + 1
-				n = n + 1
+				!print *, m, n, GSquare
 			end if
+				n = n + 1
 		end do
 		
 		m = m + 1
@@ -116,86 +129,175 @@ PROGRAM GRAPHENE_BANDS
 		GSquare = dot_product(G, G)
 
 		ParaEnergy = (GSquare * hbar**2)/(2 * eMass)
-		
-		if (ParaEnergy < MaxParaEnergy) then			
-			ParaCntr = ParaCntr + 1
-			n = n + 1
+	
+		if(ParaEnergy > MaxParaEnergy .AND. m < 0) then
+			ParaEnergy = 0
 		end if
-
+		n = -minVec - 1
 	end do
 
+
 	MatrixDimension = ParaCntr * ZCntr
-	print *, ParaCntr, ZCntr !used for a check
+	allocate(nmAllow(ParaCntr, 2))
+
+
 	
-	!Will need to put this is some loop that changes the wave vector(gam) by some et amount along spatial K
-	!call get_bands(Gam, MatrixDimension, ZCntr, MaxParaEnergy, Volume, Area, ZLength, a0, b1, b2)
+	m = -minVec - 1
+	n = -minVec - 1
+	ParaEnergy = 0
+	i = 1
+
+	do while (m <= minVec + 1)
+		do while (n <= minVec + 1)
+			
+			G = n * b1 + m * b2
+			GSquare = dot_product(G, G)
+			ParaEnergy = (GSquare * hbar**2)/(2 * eMass)
+			if (ParaEnergy <= MaxParaEnergy) then			
+				nmAllow(i, 1) = m
+				nmAllow(i, 2) = n
+				i = i + 1
+			end if
+				n = n + 1
+		end do
+		
+		m = m + 1
+		n = 0
+		G = n * b1 + m * b2
+		GSquare = dot_product(G, G)
+
+		ParaEnergy = (GSquare * hbar**2)/(2 * eMass)
+	
+		if(ParaEnergy > MaxParaEnergy .AND. m < 0) then
+			ParaEnergy = 0
+		end if
+		n = -minVec - 1
+	end do
+	!print *, ParaCntr, ZCntr !used for a check
+	open(unit = 1, file = 'Eigen.txt')
+	!write(1, fmt = "(A)", advance = 'no'), " k             Eigenvalues"
+	!write(1, fmt = "(F10.5)", advance = 'no'), kD
+	!write(1, fmt = "(A)"), ""
+	kO = KK
+
+	do i = 0, 50
+		kparallel = KK + (i * (Gam - KK)/ 50)
+		kDel = kparallel - kO
+		kD = kD + sqrt(dot_product(kDel, kDel))	
+		kO = kparallel
+		call get_bands(kparallel, MatrixDimension, ZCntr, MaxParaEnergy, Volume, Area, ZLength, a0, &
+	 	b1, b2, eMass, hbar, minVec, nmAllow, ParaCntr, kD)
+	end do
+
+	do i = 0, 50
+		kparallel = Gam + (i * (K - Gam)/ 50)
+		kDel = kparallel - kO
+		kD = kD + sqrt(dot_product(kDel, kDel))	
+		kO = kparallel
+		call get_bands(kparallel, MatrixDimension, ZCntr, MaxParaEnergy, Volume, Area, ZLength, a0, &
+	 	b1, b2, eMass, hbar, minVec, nmAllow, ParaCntr, kD)
+	end do
+
+	!do i = 0, 20
+	!	kparallel = K + (i * (M - K)/ 20)
+	!	kDel = kparallel - kO
+	!	kD = kD + sqrt(dot_product(kDel, kDel))	
+	!	kO = kparallel
+	!	call get_bands(kparallel, MatrixDimension, ZCntr, MaxParaEnergy, Volume, Area, ZLength, a0, &
+	!	b1, b2, eMass, hbar, minVec, nmAllow, ParaCntr, kD)
+	!end do
+
+	!do i = 0, 20
+	!	kparallel = M + (i * (KK - M)/ 20)
+	!	kDel = kparallel - kO
+	!	kD = kD + sqrt(dot_product(kDel, kDel))	
+	!	kO = kparallel
+	!	call get_bands(kparallel, MatrixDimension, ZCntr, MaxParaEnergy, Volume, Area, ZLength, a0, &
+	! 	b1, b2, eMass, hbar, minVec, nmAllow, ParaCntr, kD)
+	!end do
+
+	close(1) 
+
 
 END PROGRAM GRAPHENE_BANDS
 
 
 
 !Have this subroutine write the matrix to a file
-SUBROUTINE get_bands(kparallel, MatrixDimension, ZCntr, MaxParaEnergy, Volume, Area, ZLength, a0, b1, b2, eMass, hbar)
+SUBROUTINE get_bands(kparallel,MatrixDimension,ZCntr,MaxParaEnergy,Vol,Area,ZLength,a0,b1,b2,eMass,hbar,minVec,nmAllow,ParaCntr,kD)!This is too long for any more variables
 	IMPLICIT NONE
 	REAL(8), DIMENSION(:,:), allocatable :: HMatrix !Matrix of Hamiltonians
 	REAL(8), DIMENSION(3) :: GNu, GMu, delG, delGSig, G
-	INTEGER :: i, j, l, h, m, n, ierr, sig1, sig2, z
-	REAL(8) :: kznu, kzmu, nConst, Pi, kz, ParaEnergy, omegaBulk, GSquare
-	INTEGER, INTENT(IN) :: MatrixDimension, ZCntr
-	REAL(8), INTENT(IN) :: MaxParaEnergy, Volume, Area, ZLength, a0, hbar, eMass
+	INTEGER :: i, j, l, h, m, n, ierr, sig1, sig2, z, ParaCntr
+	REAL(8) :: kznu, kzmu, nConst, Pi, kz, ParaEnergy, omegaBulk, GSquare, dm
+	INTEGER, INTENT(IN) :: MatrixDimension, ZCntr, minVec
+	REAL(8), INTENT(IN) :: MaxParaEnergy, Vol, Area, ZLength, a0, hbar, eMass, kD
 	REAL(8), DIMENSION(3), INTENT(IN) :: kparallel, b1, b2
+	INTEGER ,DIMENSION(ParaCntr,2), INTENT(IN) :: nmAllow
 
 	REAL(8) :: Struct, VQ
-
+	Character :: a
     REAL(8), allocatable :: rd(:),re(:),rz(:,:)
-
+	
 	Pi = 4 * atan(1.0)
+	omegaBulk = ((3.57/a0)**3)/4
 
 	allocate(HMatrix(MatrixDimension, MatrixDimension))
 	allocate(rd(MatrixDimension), re(MatrixDimension), rz(MatrixDimension, MatrixDimension))
 
-
+	i = 1
 	j = 1
 	kznu = 0
+	h = 1
 !finds the potential for the [i,j] matrix element
-	do i = 1, MatrixDimension
+
+	do while(i <= MatrixDimension)
 		l = 1
-		GNu = l * b1 + h * b2
+		GNu = nmAllow(h, 1) * b1 + nmAllow(h, 2) * b2
+		!print *, nmAllow(h, 1), nmAllow(h, 2)
 		kznu = kznu + (Pi/ZLength)
 		do while(j <= MatrixDimension)
-			GMu = l * b1 + h * b2
+			GMu = nmAllow(l, 1) * b1 + nmAllow(l, 2) * b2
 			do z = 1, ZCntr
 				delG = GNu - GMu
 				delGSig = 0
 				kzmu = z * Pi / ZLength
-				do sig1 = -1, 1
-					do sig2 = -1, 1
-						nConst = (sig1 * sig2)/(2 * Volume)
-						
-						delGSig = delG + (sig1 * kznu) + (sig2 * kzmu) !Check that kznu & kzmu are the correct way round
+				do sig1 = -1, 1,2
+					do sig2 = -1, 1,2
+						nConst = (sig1 * sig2)/(2 * Vol)
+						delGSig = delG + (sig1 * kznu) - (sig2 * kzmu) !Check that kznu & kzmu are the correct way round
 						HMatrix(i, j) = HMatrix(i, j) + nConst * (omegaBulk * VQ(delGsig) * Struct(delG, ZLength, a0))
 					end do
 				end do
+				!print *, HMatrix(i, j)
+				!read *, a
 				j = j + 1
 			end do
 			l = l + 1
 		end do
-
 		if (i >= h * ZCntr) then
 			h = h + 1
 			GNu = h * Pi/ZLength
 			kznu = 0
 		end if
-
+		i = i + 1
 	end do
 
-	i = 1
-	n = 1
-	m = 0
-	!nested 'do's fill Hamiltonian Matrix with kinetic energy values			
-	do while(ParaEnergy < MaxParaEnergy)	
+    dm=0.0d0
+    do i=1,MatrixDimension
+     do j=1,MatrixDimension
+      dm=max(dm,abs(HMatrix(j,i)))
+     enddo
+     enddo
+     write(*,*)dm
+     
 
-		do while(ParaEnergy < MaxParaEnergy)
+	i = 1
+	m = -minVec
+	!nested 'do's fill Hamiltonian Matrix with kinetic energy values			
+	do while(m < minVec)
+		n = -minVec	
+		do while(n < minVec)
 			
 			G = n * b1 + m * b2
 			GSquare = dot_product(G, G)	
@@ -210,7 +312,7 @@ SUBROUTINE get_bands(kparallel, MatrixDimension, ZCntr, MaxParaEnergy, Volume, A
 		
 			n = n + 1			
 		end do
-
+		
 		n = 0
 		m = m + 1
 		!Recalculate ParaEnergy with new m		
@@ -219,7 +321,7 @@ SUBROUTINE get_bands(kparallel, MatrixDimension, ZCntr, MaxParaEnergy, Volume, A
 		ParaEnergy = (GSquare * hbar**2)/(2 * eMass)
 	
 	end do
-
+     write(*,*)i,MatrixDimension
 	call TRED2(MatrixDimension, MatrixDimension, HMatrix, rd, re, rz)
 	call TQL2(MatrixDimension, MatrixDimension, rd, re, rz, ierr)
       
@@ -227,6 +329,22 @@ SUBROUTINE get_bands(kparallel, MatrixDimension, ZCntr, MaxParaEnergy, Volume, A
 		write(*,*)' ierr= ', ierr
 		stop ' eigenvalue calculation'
 	endif
+	
+!	call quicksort(rd, 1, MatrixDimension)
+
+!    write(1,'(1p21e14.5)')kD,(rd(i),i=1,min(20,MatrixDimension))
+!	write(1, fmt = "(A)", advance = 'no'), " k             Eigenvalues"
+	!write(1, fmt = "(F10.5)", advance = 'no'), kD
+	!write(1, fmt = "(A)"), ""
+ 	do i = 1, 150
+ 		write(1,'(1p2e14.5)')kD,rd(i)
+		!write(1, fmt = "(A)", advance = 'no'), "     "	
+!		write(1, '(1pe14.5)', advance = 'no'), rd(i)	
+!		write(1, fmt = "(A)"), ""
+		!write(1, fmt = "(A)", advance = 'no'), ", "
+		!print *, rd(i)
+ 	end do
+	!write(1, fmt = "(A)"), " "
 
 END SUBROUTINE get_bands
 
@@ -240,7 +358,7 @@ REAL(8) FUNCTION VQ(k)
 	b3 = 0.354
 	b4 = 0.938
 
-	VQ = b1 * ((b3 * dot_product(k,k)) - b2)/(exp((b3 * dot_product(k,k)) - b4) + 1)
+	VQ = (b1 * ((b3 * dot_product(k,k)) - b2))/(4 * (exp((b3 * dot_product(k,k)) - b4) + 1))
 
 END FUNCTION VQ
 
@@ -271,6 +389,36 @@ REAL(8) FUNCTION Struct(delG, ZLength, a0)
 	
 END FUNCTION Struct
 
+
+! quicksort.f -*-f90-*-
+! Author: t-nissie
+! License: GPLv3
+! Gist: https://gist.github.com/t-nissie/479f0f16966925fa29ea
+!!
+recursive subroutine quicksort(a, first, last)
+  implicit none
+  real*8  a(*), x, t
+  integer first, last
+  integer i, j
+
+  x = a( (first+last) / 2 )
+  i = first
+  j = last
+  do
+     do while (a(i) < x)
+        i=i+1
+     end do
+     do while (x < a(j))
+        j=j-1
+     end do
+     if (i >= j) exit
+     t = a(i);  a(i) = a(j);  a(j) = t
+     i=i+1
+     j=j-1
+  end do
+  if (first < i-1) call quicksort(a, first, i-1)
+  if (j+1 < last)  call quicksort(a, j+1, last)
+end subroutine quicksort
 
 
 !Subroutines for finding Eigenvalues
