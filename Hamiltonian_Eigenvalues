@@ -9,7 +9,7 @@ PROGRAM GRAPHENE_BANDS
 	REAL(8) :: Pi, T, V, L, ZLength, ev, MaxZEnergy, MaxParaEnergy, ParaEnergy, ZEnergy, GSquare, kz, Area, Volume, kD
 	REAL(8), DIMENSION(3) :: a1, a2, b1, b2, d, G, kparallel, kO, kDel
 	REAL(8), DIMENSION(3) :: Gam, K, MSpatial, KK, cross !Spatial K Points that the bandgap is calculated along.
-	INTEGER :: n, m, p, ParaCntr, ZCntr, MatrixDimension, minVec, i !Integers used for loops and storage 
+	INTEGER :: n, m, p, ParaCntr, ZCntr, MatrixDimension, minVec, i, q !Integers used for loops and storage 
 	INTEGER, DIMENSION(:,:), allocatable :: nmAllow	
 
 	REAL(8), PARAMETER :: hbar = 1.0, eMass = 1.0 !allows for the units to be converted with relative ease
@@ -105,13 +105,13 @@ PROGRAM GRAPHENE_BANDS
 		ParaEnergy = (GSquare * hbar**2)/(2 * eMass)
 	end do
 
-	m = -minVec - 1
-	n = -minVec - 1
+	m = -minVec
+	n = -minVec
 	ParaEnergy = 0
 
-	!Check if this is correct, may be able to have 0 Energy for Parallel
-	do while (m <= minVec + 1)
-		do while (n <= minVec + 1)
+!determines allowed parallel vectors to find the matrix dimensions
+	do while (m <= minVec)
+		do while (n <= minVec)
 			
 			G = n * b1 + m * b2
 			GSquare = dot_product(G, G)
@@ -142,20 +142,21 @@ PROGRAM GRAPHENE_BANDS
 
 
 	
-	m = -minVec - 1
-	n = -minVec - 1
+	m = -minVec 
+	n = -minVec 
 	ParaEnergy = 0
 	i = 1
 
-	do while (m <= minVec + 1)
-		do while (n <= minVec + 1)
+	!fills nmAllow with allowed values of m & n
+	do while (m <= minVec)
+		do while (n <= minVec)
 			
 			G = n * b1 + m * b2
 			GSquare = dot_product(G, G)
 			ParaEnergy = (GSquare * hbar**2)/(2 * eMass)
 			if (ParaEnergy <= MaxParaEnergy) then			
-				nmAllow(i, 1) = m
-				nmAllow(i, 2) = n
+				nmAllow(i, 1) = n
+				nmAllow(i, 2) = m
 				i = i + 1
 			end if
 				n = n + 1
@@ -171,7 +172,7 @@ PROGRAM GRAPHENE_BANDS
 		if(ParaEnergy > MaxParaEnergy .AND. m < 0) then
 			ParaEnergy = 0
 		end if
-		n = -minVec - 1
+		n = -minVec
 	end do
 	!print *, ParaCntr, ZCntr !used for a check
 	open(unit = 1, file = 'Eigen.txt')
@@ -180,26 +181,28 @@ PROGRAM GRAPHENE_BANDS
 	!write(1, fmt = "(A)"), ""
 	kO = KK
 
-	do i = 0, 50
-		kparallel = KK + (i * (Gam - KK)/ 50)
+	do i = 0, 10
+		kparallel = KK + (i * (Gam - KK)/ 10)
 		kDel = kparallel - kO
 		kD = kD + sqrt(dot_product(kDel, kDel))	
 		kO = kparallel
 		call get_bands(kparallel, MatrixDimension, ZCntr, MaxParaEnergy, Volume, Area, ZLength, a0, &
 	 	b1, b2, eMass, hbar, minVec, nmAllow, ParaCntr, kD)
+		write(*,*) i
 	end do
 
-	do i = 0, 50
-		kparallel = Gam + (i * (K - Gam)/ 50)
+	do i = 0, 10
+		kparallel = Gam + (i * (K - Gam)/ 10)
 		kDel = kparallel - kO
 		kD = kD + sqrt(dot_product(kDel, kDel))	
 		kO = kparallel
 		call get_bands(kparallel, MatrixDimension, ZCntr, MaxParaEnergy, Volume, Area, ZLength, a0, &
 	 	b1, b2, eMass, hbar, minVec, nmAllow, ParaCntr, kD)
+		write(*,*) i
 	end do
 
-	!do i = 0, 20
-	!	kparallel = K + (i * (M - K)/ 20)
+	!do i = 0, 10
+	!	kparallel = K + (i * (M - K)/ 10)
 	!	kDel = kparallel - kO
 	!	kD = kD + sqrt(dot_product(kDel, kDel))	
 	!	kO = kparallel
@@ -207,7 +210,7 @@ PROGRAM GRAPHENE_BANDS
 	!	b1, b2, eMass, hbar, minVec, nmAllow, ParaCntr, kD)
 	!end do
 
-	!do i = 0, 20
+	!do i = 0, 
 	!	kparallel = M + (i * (KK - M)/ 20)
 	!	kDel = kparallel - kO
 	!	kD = kD + sqrt(dot_product(kDel, kDel))	
@@ -227,16 +230,15 @@ END PROGRAM GRAPHENE_BANDS
 SUBROUTINE get_bands(kparallel,MatrixDimension,ZCntr,MaxParaEnergy,Vol,Area,ZLength,a0,b1,b2,eMass,hbar,minVec,nmAllow,ParaCntr,kD)!This is too long for any more variables
 	IMPLICIT NONE
 	REAL(8), DIMENSION(:,:), allocatable :: HMatrix !Matrix of Hamiltonians
-	REAL(8), DIMENSION(3) :: GNu, GMu, delG, delGSig, G
-	INTEGER :: i, j, l, h, m, n, ierr, sig1, sig2, z, ParaCntr
-	REAL(8) :: kznu, kzmu, nConst, Pi, kz, ParaEnergy, omegaBulk, GSquare, dm
+	REAL(8), DIMENSION(3) :: GNu, GMu, delG, delGSig, G, kznu, kzmu
+	INTEGER :: i, j, l, h, m, n, ierr, sig1, sig2, z, ParaCntr, zouter
+	REAL(8) :: nConst, Pi, kz, ParaEnergy, omegaBulk, GSquare, dm
 	INTEGER, INTENT(IN) :: MatrixDimension, ZCntr, minVec
 	REAL(8), INTENT(IN) :: MaxParaEnergy, Vol, Area, ZLength, a0, hbar, eMass, kD
 	REAL(8), DIMENSION(3), INTENT(IN) :: kparallel, b1, b2
 	INTEGER ,DIMENSION(ParaCntr,2), INTENT(IN) :: nmAllow
 
 	REAL(8) :: Struct, VQ
-	Character :: a
     REAL(8), allocatable :: rd(:),re(:),rz(:,:)
 	
 	Pi = 4 * atan(1.0)
@@ -245,86 +247,58 @@ SUBROUTINE get_bands(kparallel,MatrixDimension,ZCntr,MaxParaEnergy,Vol,Area,ZLen
 	allocate(HMatrix(MatrixDimension, MatrixDimension))
 	allocate(rd(MatrixDimension), re(MatrixDimension), rz(MatrixDimension, MatrixDimension))
 
-	i = 1
-	j = 1
 	kznu = 0
 	h = 1
 !finds the potential for the [i,j] matrix element
-
-	do while(i <= MatrixDimension)
-		l = 1
-		GNu = nmAllow(h, 1) * b1 + nmAllow(h, 2) * b2
-		!print *, nmAllow(h, 1), nmAllow(h, 2)
-		kznu = kznu + (Pi/ZLength)
-		do while(j <= MatrixDimension)
-			GMu = nmAllow(l, 1) * b1 + nmAllow(l, 2) * b2
-			do z = 1, ZCntr
-				delG = GNu - GMu
-				delGSig = 0
-				kzmu = z * Pi / ZLength
-				do sig1 = -1, 1,2
-					do sig2 = -1, 1,2
-						nConst = (sig1 * sig2)/(2 * Vol)
-						delGSig = delG + (sig1 * kznu) - (sig2 * kzmu) !Check that kznu & kzmu are the correct way round
-						HMatrix(i, j) = HMatrix(i, j) + nConst * (omegaBulk * VQ(delGsig) * Struct(delG, ZLength, a0))
-					end do
-				end do
-				!print *, HMatrix(i, j)
-				!read *, a
-				j = j + 1
-			end do
-			l = l + 1
-		end do
-		if (i >= h * ZCntr) then
-			h = h + 1
-			GNu = h * Pi/ZLength
-			kznu = 0
-		end if
-		i = i + 1
-	end do
-
-    dm=0.0d0
-    do i=1,MatrixDimension
-     do j=1,MatrixDimension
-      dm=max(dm,abs(HMatrix(j,i)))
-     enddo
-     enddo
-     write(*,*)dm
-     
-
 	i = 1
-	m = -minVec
-	!nested 'do's fill Hamiltonian Matrix with kinetic energy values			
-	do while(m < minVec)
-		n = -minVec	
-		do while(n < minVec)
+	j = 1
+	do while (i <= MatrixDimension)
+		GNu = nmAllow(h, 1) * b1 + nmAllow(h, 2) * b2
+		do zouter = 1, ZCntr
+			l = 1
+			kznu(3) = zOuter * (Pi/ZLength)
+			j = 1
+			do while (j <= MatrixDimension)
+				GMu = nmAllow(l, 1) * b1 + nmAllow(l, 2) * b2
+				do z = 1, ZCntr
+					delG = GNu - GMu
+					delGSig = 0
+					kzmu(3) = z * Pi / ZLength
+					do sig1 = -1, 1,2 !steps by 2
+						do sig2 = -1, 1,2
+							nConst = (sig1 * sig2)/(2 * Vol)
+							delGSig = abs(delG + (sig1 * kznu) - (sig2 * kzmu)) !Check that kznu & kzmu are the correct way round
+							HMatrix(i, j) = HMatrix(i, j) + (nConst * (omegaBulk * VQ(delGsig) * Struct(delG, ZLength, a0)))
+							!write(*,*) HMatrix(i,j)
+						end do
+					end do
+					j = j + 1
+				end do
+				l = l + 1
+			end do
+		i = i + 1
+		end do
+		h = h + 1
+		!write(*,*) Paracntr, h
+	end do
+	
+	i = 1
+	
+		do n = 1, ParaCntr
 			
-			G = n * b1 + m * b2
-			GSquare = dot_product(G, G)	
-			ParaEnergy = (GSquare * hbar**2)/(2 * eMass)
-			if (ParaEnergy < MaxParaEnergy) then
+			G = nmallow(n,1) * b1 + nmallow(n,2) * b2
+			!GSquare = dot_product(G, G)	
+			!ParaEnergy = (GSquare * hbar**2)/(2 * eMass)
 				do z = 1, ZCntr
 					kz = z * Pi / ZLength
-					HMatrix(i, i) = HMatrix(i, i) + ((dot_product(kparallel + G, kparallel + G) + kz**2)/2) 
+					HMatrix(i, i) = HMatrix(i, i) + ((dot_product(kparallel + G, kparallel + G) + kz**2)/2)
 					i = i + 1
 				end do
-			end if
-		
-			n = n + 1			
+					
 		end do
-		
-		n = 0
-		m = m + 1
-		!Recalculate ParaEnergy with new m		
-		G = n * b1 + m * b2
-		GSquare = dot_product(G, G)	
-		ParaEnergy = (GSquare * hbar**2)/(2 * eMass)
-	
-	end do
-     write(*,*)i,MatrixDimension
+     !write(*,*)i,MatrixDimension
 	call TRED2(MatrixDimension, MatrixDimension, HMatrix, rd, re, rz)
 	call TQL2(MatrixDimension, MatrixDimension, rd, re, rz, ierr)
-      
 	if(ierr.ne.0)then
 		write(*,*)' ierr= ', ierr
 		stop ' eigenvalue calculation'
@@ -336,7 +310,7 @@ SUBROUTINE get_bands(kparallel,MatrixDimension,ZCntr,MaxParaEnergy,Vol,Area,ZLen
 !	write(1, fmt = "(A)", advance = 'no'), " k             Eigenvalues"
 	!write(1, fmt = "(F10.5)", advance = 'no'), kD
 	!write(1, fmt = "(A)"), ""
- 	do i = 1, 150
+ 	do i = 1, 20
  		write(1,'(1p2e14.5)')kD,rd(i)
 		!write(1, fmt = "(A)", advance = 'no'), "     "	
 !		write(1, '(1pe14.5)', advance = 'no'), rd(i)	
@@ -358,8 +332,8 @@ REAL(8) FUNCTION VQ(k)
 	b3 = 0.354
 	b4 = 0.938
 
-	VQ = (b1 * ((b3 * dot_product(k,k)) - b2))/(4 * (exp((b3 * dot_product(k,k)) - b4) + 1))
-
+	VQ = (b1 * ((b3 * dot_product(k,k)) - b2))/(4*(exp((b3 * dot_product(k,k)) - b4) + 1))
+!removed 1/4
 END FUNCTION VQ
 
 REAL(8) FUNCTION Struct(delG, ZLength, a0)
