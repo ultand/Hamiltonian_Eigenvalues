@@ -235,7 +235,7 @@ SUBROUTINE get_bands(kparallel,MatrixDimension,ZCntr,ZLength,a0,b1,b2,eMass,hbar
 	REAL(8), DIMENSION(MatrixDimension,MatrixDimension), INTENT(IN) :: HMatrix !Matrix of Hamiltonians
 	REAL(8), DIMENSION(3) :: G
 	INTEGER :: i, j, l, h, m, n, ierr, sig1, sig2, z, ParaCntr
-	REAL(8) :: nConst, Pi, kz, ParaEnergy, GSquare
+	REAL(8) :: Pi, kz, ParaEnergy, GSquare
 	INTEGER, INTENT(IN) :: MatrixDimension, ZCntr
 	REAL(8), INTENT(IN) :: ZLength, a0, hbar, eMass, kD
 	REAL(8), DIMENSION(3), INTENT(IN) :: kparallel, b1, b2
@@ -243,7 +243,6 @@ SUBROUTINE get_bands(kparallel,MatrixDimension,ZCntr,ZLength,a0,b1,b2,eMass,hbar
 	REAL(8), DIMENSION(MatrixDimension, MatrixDimension) :: JMatrix
 	REAL(8) :: Struct, VQ
     REAL(8), allocatable :: rd(:),re(:),rz(:,:)
-	
 	Pi = 4 * atan(1.0)
 
 	allocate(rd(MatrixDimension), re(MatrixDimension), rz(MatrixDimension, MatrixDimension))
@@ -262,7 +261,6 @@ SUBROUTINE get_bands(kparallel,MatrixDimension,ZCntr,ZLength,a0,b1,b2,eMass,hbar
 		do z = 1, ZCntr
 			kz = z * Pi / ZLength
 			JMatrix(i, i) = HMatrix(i, i) + ((dot_product(kparallel + G, kparallel + G) + kz**2)/2)
-			write(*,*) JMAtrix(i,i), HMatrix(i,i)
 			i = i + 1
 		end do
 					
@@ -300,12 +298,13 @@ SUBROUTINE potential_fill(MatrixDimension, nmAllow, b1, b2, HMatrix, ZLength, Vo
 	INTEGER, DIMENSION(ParaCntr, 2), INTENT(IN) :: nmAllow
 	REAL(8), DIMENSION(3), INTENT(IN) :: b1, b2
 	REAL(8), INTENT(IN) :: Vol, ZLength, a0
-
+	REAL(8) :: nConst
 	REAL(8), DIMENSION (3) :: GMu, GNU, kzmu, kznu, delGSig, delG
 	INTEGER :: h, i, j, l, sig1, sig2, z, zouter
-	REAL(8) :: Struct, VQ, Pi
-	REAL(8) :: omegaBulk 
-	omegaBulk = ((3.57/a0)**3)/4
+	REAL(8) :: VQ, Pi
+	COMPLEX(8) :: Struct, sf
+	REAL(8) :: omegaBulk
+	omegaBulk = ((3.57/0.529177)**3)/4!a0 is the angBohr conversion
 	Pi = 4 * atan(1.0)	
 
 	kznu = 0
@@ -328,11 +327,16 @@ SUBROUTINE potential_fill(MatrixDimension, nmAllow, b1, b2, HMatrix, ZLength, Vo
 					do sig1 = -1, 1,2 !steps by 2
 						do sig2 = -1, 1,2
 							nConst = (sig1 * sig2)/(2 * Vol)
+							sf = 0.0
+							do it =-1,1,2
+								sf = sf + exp((0,1)*(it*(delG(1)*vecd(1)+delG(2)*vecd(2))+dGz*ZLength/2))
+							end do
 							delGSig = delG + (sig1 * kznu) - (sig2 * kzmu) !Check that kznu & kzmu are the correct way round
-							HMatrix(i, j) = HMatrix(i, j) + (nConst * (omegaBulk * VQ(delGsig) * Struct(delG, ZLength, a0)))
-							!write(*,*) HMatrix(i,j)
+							HMatrix(i, j) = HMatrix(i, j) + dble((nConst * (omegaBulk * VQ(delGsig) * Struct(delG, ZLength, a0))))
+							!write(*,*) omegaBulk/(2*Vol), omegaBulk, Vol
 						end do
 					end do
+					!write(*,*) HMatrix(i,j)
 					j = j + 1
 				end do
 				l = l + 1
@@ -362,7 +366,7 @@ REAL(8) FUNCTION VQ(k)
 !removed 1/4
 END FUNCTION VQ
 
-REAL(8) FUNCTION Struct(delG, ZLength, a0)
+COMPLEX(8) FUNCTION Struct(delG, ZLength, a0)
 	IMPLICIT NONE
 	REAL(8), DIMENSION(3), INTENT(IN) :: delG
 	REAL(8), INTENT(IN) :: ZLength, a0	
