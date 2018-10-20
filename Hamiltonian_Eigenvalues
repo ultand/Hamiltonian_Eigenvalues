@@ -5,7 +5,7 @@
 PROGRAM GRAPHENE_BANDS
 	IMPLICIT NONE
 	
-	REAL(8) :: a0 = 1.42d0, AngBohr = 0.529177d0 !angstroms per Bohr Radius and primitive lattice vector for graphene in angstroms
+	REAL(8) :: a0 = 2.46d0, AngBohr = 0.529177d0 !angstroms per Bohr Radius and primitive lattice vector for graphene in angstroms
 	REAL(8) :: Pi, T, V, L, ZLength, ev, MaxZEnergy, MaxParaEnergy, ParaEnergy, ZEnergy, GSquare, kz, Area, Volume, kD
 	REAL(8), DIMENSION(3) :: a1, a2, b1, b2, d, G, kparallel, kO, kDel
 	REAL(8), DIMENSION(3) :: Gam, K, MSpatial, KK, cross !Spatial K Points that the bandgap is calculated along.
@@ -21,26 +21,24 @@ PROGRAM GRAPHENE_BANDS
 	kD = 0
 	
 	!Define real space lattice vectors of graphene
-	a1(1) = (a0 * sqrt(3.0d0)) / 2.0d0
-	a1(2) = (a0 * 3.0d0) / 2.0d0
+	a1(1) = a0*0.5d0
+	a1(2) = a0*sqrt(0.75d0)
 	a1(3) = 0.0d0
 
-	a2(1) = -(a0 * sqrt(3.0d0)) / 2.0d0
-	a2(2) = (a0 * 3.0d0) / 2.0d0
+	a2(1) = -a0*0.5d0
+	a2(2) = a0*sqrt(0.75d0)
 	a2(3) = 0.0d0
 
 
-	d(1) = 0.0d0
-	d(2) = a0
-	d(3) = 0.0d0
+	d = (a1+a2)/3.0d0
 
 	!define reciprocal lattice space vectors of graphene
-	b1(1) = (2.0d0 * Pi) / (sqrt(3.0d0)*a0)
-	b1(2) = (2.0d0 * Pi) / (3.0d0 * a0)
+	b1(1) = +(2*pi/a0)
+	b1(2) = (2*pi/a0)/sqrt(3.0d0)
 	b1(3) = 0.0
 	
-	b2(1) = -(2.0d0 * Pi) / (sqrt(3.0d0) * a0) 
-	b2(2) = (2.0d0 * Pi) / (3.0d0 * a0)
+	b2(1) = -(2*pi/a0)
+	b2(2) = (2*pi/a0)/sqrt(3.0d0)
 	b2(3) = 0.0d0
 
 	!define special K Points
@@ -52,13 +50,9 @@ PROGRAM GRAPHENE_BANDS
 	K(2) = 2.0d0 * Pi/(3.0d0 * a0)
 	K(3) = 0.0d0
 	
-	MSpatial(1) = Pi/(sqrt(3.0d0) * 2.0d0 * a0)
-	MSpatial(2) = Pi/(3.0d0 * a0)
-	MSpatial(3) = 0.0d0
+	MSpatial=b1/2.0d0
 
-	KK(1) = 4.0d0 * Pi/(3.0d0 * sqrt(3.0d0) * a0)
-	KK(2) = 0.0d0
-	KK(3) = 0.0d0
+	KK=(b1-b2)/3.0d0
 
 	!cross product of reciprocal lattice vectors
 	cross(1) = b1(2) * b2(3) - b1(3) * b2(2)
@@ -79,7 +73,7 @@ PROGRAM GRAPHENE_BANDS
 	read *, ZLength
 
 	ZLength = ZLength / AngBohr	!convert zlength to Bohr radii
-	Volume = ZLength * Area
+	Volume = ZLength*sqrt(0.75d0)*a0**2
 
 	ParaCntr = 0
 	ParaEnergy = 0.0d0
@@ -182,7 +176,7 @@ PROGRAM GRAPHENE_BANDS
 	kO = KK
 
 	allocate(HMatrix(MatrixDimension, MatrixDimension))
-	call potential_fill(MatrixDimension, nmAllow, b1, b2,HMatrix, ZLength, Volume, ZCntr, ParaCntr, a0)
+	call potential_fill(MatrixDimension, nmAllow, b1, b2,HMatrix, ZLength, Volume, ZCntr, ParaCntr, a0,d)
 
 	do i = 0, 20
 		kparallel = Gam + (i * (KK - Gam)/ 20)
@@ -252,7 +246,9 @@ SUBROUTINE get_bands(kparallel,MatrixDimension,ZCntr,ZLength,a0,b1,b2,eMass,hbar
 	i = 1
 	!clears JMatrix
 	do n = 1, MatrixDimension
-		JMatrix(n,n) = 0
+		do j = 1, MatrixDimension
+		JMatrix(n,j) = HMatrix(n,j)
+		end do
 	end do	
 	!write (*,*)JMatrix(i,i)
 	do n = 1, ParaCntr
@@ -261,7 +257,7 @@ SUBROUTINE get_bands(kparallel,MatrixDimension,ZCntr,ZLength,a0,b1,b2,eMass,hbar
 		!ParaEnergy = (GSquare * hbar**2)/(2 * eMass)
 		do z = 1, ZCntr
 			kz = z * Pi / ZLength
-			JMatrix(i, i) = HMatrix(i, i) + ((dot_product(kparallel + G, kparallel + G) + kz**2)/2)
+			JMatrix(i, i) = JMatrix(i, i) + ((dot_product(kparallel + G, kparallel + G) + kz**2)/2)
 			!write(*,*)JMatrix(i,i) - hMatrix(i,i)		
 			i = i + 1	
 		end do
@@ -294,14 +290,14 @@ SUBROUTINE get_bands(kparallel,MatrixDimension,ZCntr,ZLength,a0,b1,b2,eMass,hbar
 	deallocate(rd, rz, re)
 END SUBROUTINE get_bands
 
-SUBROUTINE potential_fill(MatrixDimension, nmAllow, b1, b2, HMatrix, ZLength, Vol, ZCntr, ParaCntr, a0)
+SUBROUTINE potential_fill(MatrixDimension, nmAllow, b1, b2, HMatrix, ZLength, Vol, ZCntr, ParaCntr, a0, d)
 	INTEGER, INTENT(IN) :: ZCntr, ParaCntr	
 	REAL(8), DIMENSION(MatrixDimension, MatrixDimension), INTENT(OUT) :: HMatrix
 	INTEGER, DIMENSION(ParaCntr, 2), INTENT(IN) :: nmAllow
-	REAL(8), DIMENSION(3), INTENT(IN) :: b1, b2
+	REAL(8), DIMENSION(3), INTENT(IN) :: b1, b2, d
 	REAL(8), INTENT(IN) :: Vol, ZLength, a0
 	REAL(8) :: nConst
-	REAL(8), DIMENSION (3) :: GMu, GNU, kzmu, kznu, delGSig, delG, vecd
+	REAL(8), DIMENSION (3) :: GMu, GNU, kzmu, kznu, delGSig, delG
 	INTEGER :: h, i, j, l, sig1, sig2, z, zouter, it
 	REAL(8) :: VQ, Pi, dGz
 	COMPLEX(8) :: Struct, sf
@@ -309,9 +305,6 @@ SUBROUTINE potential_fill(MatrixDimension, nmAllow, b1, b2, HMatrix, ZLength, Vo
 	omegaBulk = ((3.57d0/0.529177d0)**3)/4.0d0!a0 is the angBohr conversion
 	Pi = 4.0d0 * atan(1.0d0)	
 
-	vecd(1) = 0.0
-	vecd(2) = a0
-	vecd(3) = 0.0
 
 	kznu = 0
 	h = 1
@@ -336,14 +329,14 @@ SUBROUTINE potential_fill(MatrixDimension, nmAllow, b1, b2, HMatrix, ZLength, Vo
 							nConst = (sig1 * sig2)/(2 * Vol)
 							sf = 0.0
 							do it =-1,1,2
-								sf = sf + exp((0,1)*(it*(delG(1)*vecd(1)+delG(2)*vecd(2))+(dGz*ZLength/2)))
+								sf = sf + exp((0,1)*(it*(delG(1)*d(1)+delG(2)*d(2))+(dGz*ZLength/2)))
 							end do
 							!write(*,*)dble(sf)
 							delGSig = delG + (sig1 * kznu) - (sig2 * kzmu) !Check that kznu & kzmu are the correct way round
 							HMatrix(i, j) = HMatrix(i, j) + nConst * (omegaBulk * VQ(delGsig) * dble(sf))
 
 
-							write(2,*) dble(sf), VQ(delGSig), nConst !It doesn't work without this line, I cant explain it
+							write(*,*) delGSig !It doesn't work without this line, I cant explain it
 
 						end do
 					end do
@@ -368,13 +361,13 @@ REAL(8) FUNCTION VQ(k)
 	IMPLICIT NONE
 	REAL(8), DIMENSION(3), INTENT(IN) :: k
 	REAL(8) b1, b2, b3, b4
-	b1 = 1.781
-	b2 = 1.424
-	b3 = 0.354
-	b4 = 0.938
+	b1 = 1.781d0
+	b2 = 1.424d0
+	b3 = 0.354d0
+	b4 = 0.938d0
 
-	VQ = (b1 * ((b3 * dot_product(k,k)) - b2))/(4*(exp((b3 * dot_product(k,k)) - b4) + 1.0))
-!removed 1/4
+	VQ = (b1 * ((b3 * dot_product(k,k)) - b2))/(4*(exp((b3 * dot_product(k,k)) - b4) + 1.0d0))
+	
 END FUNCTION VQ
 
 COMPLEX(8) FUNCTION Struct(delG, ZLength, a0)
