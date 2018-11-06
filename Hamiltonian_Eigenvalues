@@ -1,201 +1,202 @@
-!STILL TO DO:
-!ONLY NEED POTENTIAL HAMILTONIAN ONCE
-
 
 PROGRAM GRAPHENE_BANDS
 	IMPLICIT NONE
 	
-	REAL(8) :: a0 = 2.46d0, AngBohr = 0.529177d0 !angstroms per Bohr Radius and primitive lattice vector for graphene in angstroms
-	REAL(8) :: Pi, T, V, L, ZLength, ev, MaxZEnergy, MaxParaEnergy, ParaEnergy, ZEnergy, GSquare, kz, Area, Volume, kD
-	REAL(8), DIMENSION(3) :: a1, a2, b1, b2, d, G, kparallel, kO, kDel
-	REAL(8), DIMENSION(3) :: Gam, K, MSpatial, KK, cross !Spatial K Points that the bandgap is calculated along.
-	INTEGER :: n, m, p, ParaCntr, ZCntr, MatrixDimension, minVec, i, q !Integers used for loops and storage 
-	INTEGER, DIMENSION(:,:), allocatable :: nmAllow	
-	REAL(8), DIMENSION(:,:), allocatable :: HMatrix
+	REAL(8)::a0=2.46d0, AngBohr=0.529177d0 !angstroms per Bohr Radius and primitive lattice vector for graphene in angstroms
+	REAL(8)::Pi, T, V, L, ZLength, ev, MaxZEnergy, MaxParaEnergy, ParaEnergy, ZEnergy, GSquare, kz, Area, Volume, kD, e0
+	REAL(8), DIMENSION(3)::a1, a2, b1, b2, d, G, kparallel, kO, kDel
+	REAL(8), DIMENSION(3)::Gam, K, MSpatial, KK, cross !Spatial K Points that the bandgap is calculated along.
+	INTEGER::n, m, p, ParaCntr, ZCntr, MatrixDimension, minVec, i, q !Integers used for loops and storage 
+	INTEGER, DIMENSION(:,:), ALLOCATABLE::nmAllow	
+	REAL(8), DIMENSION(:,:), ALLOCATABLE::HMatrix
 
-	REAL(8), PARAMETER :: hbar = 1.0d0, eMass = 1.0d0 !allows for the units to be converted with relative ease
+	REAL(8), PARAMETER::hbar=1.0d0, eMass=1.0d0 !allows for the units to be converted with relative ease
 	
-	ev = 27.2114d0 !Hartrees in an electronvolt
-	Pi = 4.0d0 * atan(1.0d0)
-	a0 = a0 / AngBohr	
-	kD = 0
+	ev=27.2114d0 !Hartrees in an electronvolt
+	Pi=4.0d0*atan(1.0d0)
+	a0=a0/AngBohr	
+	kD=0
 	
 	!Define real space lattice vectors of graphene
-	a1(1) = a0*0.5d0
-	a1(2) = a0*sqrt(0.75d0)
-	a1(3) = 0.0d0
+	a1(1)=a0*0.5d0
+	a1(2)=a0*sqrt(0.75d0)
+	a1(3)=0.0d0
 
-	a2(1) = -a0*0.5d0
-	a2(2) = a0*sqrt(0.75d0)
-	a2(3) = 0.0d0
+	a2(1)=-a0*0.5d0
+	a2(2)=a0*sqrt(0.75d0)
+	a2(3)=0.0d0
 
-
-	d = (a1+a2)/3.0d0
+	d=(a1+a2)/3.0d0
 
 	!define reciprocal lattice space vectors of graphene
-	b1(1) = +(2*pi/a0)
-	b1(2) = (2*pi/a0)/sqrt(3.0d0)
-	b1(3) = 0.0
+	b1(1)=+(2.0d0*pi/a0)
+	b1(2)=(2.0d0*pi/a0)/sqrt(3.0d0)
+	b1(3)=0.0
 	
-	b2(1) = -(2*pi/a0)
-	b2(2) = (2*pi/a0)/sqrt(3.0d0)
-	b2(3) = 0.0d0
+	b2(1)=-(2.0d0*pi/a0)
+	b2(2)=(2.0d0*pi/a0)/sqrt(3.0d0)
+	b2(3)=0.0d0
 
 	!define special K Points
-	Gam(1) = 0.0d0
-	Gam(2) = 0.0d0
-	Gam(3) = 0.0d0
+	Gam(1)=0.0d0
+	Gam(2)=0.0d0
+	Gam(3)=0.0d0
 
-	K(1) = 2.0d0 * Pi/(3.0d0 * sqrt(3.0d0) * a0)
-	K(2) = 2.0d0 * Pi/(3.0d0 * a0)
-	K(3) = 0.0d0
+	K(1)=2.0d0*Pi/(3.0d0*sqrt(3.0d0)*a0)
+	K(2) =2.0d0*Pi/(3.0d0*a0)
+	K(3) =0.0d0
 	
 	MSpatial=b1/2.0d0
 
 	KK=(b1-b2)/3.0d0
 
-	!cross product of reciprocal lattice vectors
-	cross(1) = b1(2) * b2(3) - b1(3) * b2(2)
-	cross(2) = b1(3) * b2(1) - b1(1) * b2(3)
-	cross(3) = b1(1) * b2(2) - b1(2) * b2(1)	
-	!Magnitude of the cross product gives the area
+	!The surface area of the real space lattice
 	Area = abs(a1(1)*a2(2)-a2(1)*a1(2))
-!    write(*,*)Area,sqrt(a1(1)**2+a1(2)**2),sqrt(a2(1)**2+a2(2)**2)
 
 	!user input to define cutoff energies & zlength
-	print *, "Input Max Z Energy in Hartrees: "
+	write(*,*) "Input Max Z Energy in Hartrees: "
 	read *, MaxZEnergy
 
-	print *, "Input Max Parallel Energy in Hartrees: "
+	write(*,*) "Input Max Parallel Energy in Hartrees: "
 	read *, MaxParaEnergy
 
-	print *, "Input Z Length in units of Angstroms: "
+	write(*,*) "Input Z Length in units of Angstroms: "
 	read *, ZLength
 
-	ZLength = ZLength / AngBohr	!convert zlength to Bohr radii
-	Volume = ZLength*sqrt(0.75d0)*a0**2
+	ZLength=ZLength/AngBohr	!convert zlength to Bohr radii
+	Volume=ZLength*sqrt(0.75d0)*a0**2
 
-	ParaCntr = 0
-	ParaEnergy = 0.0d0
-	ZEnergy = 0.0d0
-	ZCntr = 0	!stores the number of discrete Z Energies for the given length and Energy cutoff
-	GSquare = 0.0d0
-	do while (ZEnergy < MaxZEnergy)
+	ParaCntr=0
+	ParaEnergy=0.0d0
+	ZEnergy=0.0d0
+	ZCntr=0	!stores the number of discrete Z Energies for the given length and Energy cutoff
+	GSquare=0.0d0
 
-		kz = (ZCntr + 1) * Pi / ZLength
-		ZEnergy = (hbar**2.0d0)/(2.0d0 * eMass) * kz**2.0d0
-
-		if (ZEnergy < MaxZEnergy) then
-			ZCntr = ZCntr + 1
+	do while (ZEnergy<MaxZEnergy)
+		kz=(ZCntr+1)*Pi/ZLength
+		ZEnergy=(hbar**2.0d0)/(2.0d0*eMass)*kz**2.0d0
+		if (ZEnergy<MaxZEnergy) then
+			ZCntr=ZCntr+1
 		end if
 	end do
+	minVec=0
 
-	minVec = 0
-
-	do while (ParaEnergy <= MaxParaEnergy)
-		minVec = minVec + 1
-		G = minVec * b1
-		GSquare = dot_product(G, G)
-		ParaEnergy = (GSquare * hbar**2)/(2.0d0 * eMass)
+	do while (ParaEnergy<=MaxParaEnergy)
+		minVec=minVec+1
+		G=minVec*b1
+		GSquare=dot_product(G, G)
+		ParaEnergy=(GSquare*hbar**2)/(2.0d0*eMass)
 	end do
 
-	m = -minVec
-	n = -minVec
-	ParaEnergy = 0
+	m=-minVec
+	n=-minVec
+	ParaEnergy=0
 
 !determines allowed parallel vectors to find the matrix dimensions
-	do while (m <= minVec)
-		do while (n <= minVec)
-			
-			G = n * b1 + m * b2
-			GSquare = dot_product(G, G)
-			ParaEnergy = (GSquare * hbar**2)/(2.0d0 * eMass)
-			if (ParaEnergy <= MaxParaEnergy) then			
-				ParaCntr = ParaCntr + 1
+	do while (m<=minVec)
+		do while (n<=minVec)
+			G=(n*b1)+(m*b2)
+			GSquare=dot_product(G, G)
+			ParaEnergy=(GSquare*hbar**2)/(2.0d0*eMass)
+			if (ParaEnergy<=MaxParaEnergy) then			
+				ParaCntr=ParaCntr+1
 				!print *, m, n, GSquare
 			end if
-				n = n + 1
+				n=n+1
 		end do
-		
-		m = m + 1
-		n = 0
-		G = n * b1 + m * b2
+		m=m+1
+		n=0
+		G=(n*b1)+(m*b2)
 		GSquare = dot_product(G, G)
 
 		ParaEnergy = (GSquare * hbar**2)/(2.0d0 * eMass)
 	
-		if(ParaEnergy > MaxParaEnergy .AND. m < 0) then
-			ParaEnergy = 0
+		if(ParaEnergy>MaxParaEnergy.AND.m<0) then
+			ParaEnergy=0
 		end if
-		n = -minVec - 1
+		n=-minVec-1
 	end do
 
 
-	MatrixDimension = ParaCntr * ZCntr
+	MatrixDimension=ParaCntr*ZCntr
 	allocate(nmAllow(ParaCntr, 2))
 
-
-	
-	m = -minVec 
-	n = -minVec 
-	ParaEnergy = 0
-	i = 1
+	m=-minVec 
+	n=-minVec 
+	ParaEnergy=0
+	i=1
 
 	!fills nmAllow with allowed values of m & n
-	do while (m <= minVec)
-		do while (n <= minVec)
-			
-			G = n * b1 + m * b2
-			GSquare = dot_product(G, G)
-			ParaEnergy = (GSquare * hbar**2)/(2.0d0 * eMass)
-			if (ParaEnergy <= MaxParaEnergy) then			
-				nmAllow(i, 1) = n
-				nmAllow(i, 2) = m
-				i = i + 1
+	do while (m<=minVec)
+		do while (n<=minVec)	
+			G=(n*b1)+(m*b2)
+			GSquare=dot_product(G, G)
+			ParaEnergy=(GSquare*hbar**2)/(2.0d0*eMass)
+			if (ParaEnergy<=MaxParaEnergy) then			
+				nmAllow(i, 1)=n
+				nmAllow(i, 2)=m
+				i=i+1
 			end if
-				n = n + 1
+				n=n+1
 		end do
-		
-		m = m + 1
-		n = 0
-		G = n * b1 + m * b2
-		GSquare = dot_product(G, G)
-
-		ParaEnergy = (GSquare * hbar**2)/(2 * eMass)
-	
-		if(ParaEnergy > MaxParaEnergy .AND. m < 0) then
-			ParaEnergy = 0
+		m=m+1
+		n=0
+		G=(n*b1)+(m*b2)
+		GSquare=dot_product(G, G)
+		ParaEnergy=(GSquare*hbar**2)/(2*eMass)
+		if(ParaEnergy>MaxParaEnergy.AND.m<0) then
+			ParaEnergy=0
 		end if
-		n = -minVec
+		n=-minVec
 	end do
 	!print *, ParaCntr, ZCntr !used for a check
 	open(unit = 1, file = 'Eigen.txt')
+	open(unit = 2, file = 'facePlot.txt')
 	!write(1, fmt = "(A)", advance = 'no'), " k             Eigenvalues"
 	!write(1, fmt = "(F10.5)", advance = 'no'), kD
 	!write(1, fmt = "(A)"), ""
-	kO = KK
+	kO=MSpatial
 
 	allocate(HMatrix(MatrixDimension, MatrixDimension))
 	call potential_fill(MatrixDimension, nmAllow, b1, b2,HMatrix, ZLength, Volume, ZCntr, ParaCntr, a0,d)
-
-	do i = 0, 20
-		kparallel = Gam + (i * (KK - Gam)/ 20)
-		kDel = kparallel - kO
-		kD = kD + sqrt(dot_product(kDel, kDel))	
-		kO = kparallel
-		call get_bands(kparallel, MatrixDimension, ZCntr, ZLength, a0, &
-	 	b1, b2, eMass, hbar, nmAllow, ParaCntr, kD, HMatrix,ev)
-		!write(*,*) i
-	end do
+	
+	e0=0.0d0
+	kparallel=kk
+	call get_bands(kparallel, MatrixDimension, ZCntr, ZLength, a0, &
+	 	b1, b2, eMass, hbar, nmAllow, ParaCntr, kD, HMatrix,ev, e0,a1,a2)
+	
+	kparallel=KK/1.5d0
+	call get_bands(kparallel, MatrixDimension, ZCntr, ZLength, a0, &
+		b1, b2, eMass, hBar, nmAllow, ParaCntr, kD, hMatrix, ev, e0, a1, a2)
 
 	!do i = 0, 20
-		!kparallel = Gam + (i * (K - Gam)/ 20)
-		!kDel = kparallel - kO
-		!kD = kD + sqrt(dot_product(kDel, kDel))	
-		!kO = kparallel
-		!call get_bands(kparallel, MatrixDimension, ZCntr, ZLength, a0, &
-	 	!b1, b2, eMass, hbar, nmAllow, ParaCntr, kD, HMatrix)
-		!write(*,*) i
+	!	kparallel = MSpatial + (i * (Gam - MSpatial)/ 20)
+	!	kDel = kparallel - kO
+	!	kD = kD + sqrt(dot_product(kDel, kDel))	
+	!	kO = kparallel
+	!	call get_bands(kparallel, MatrixDimension, ZCntr, ZLength, a0, &
+	! 	b1, b2, eMass, hbar, nmAllow, ParaCntr, kD, HMatrix,ev)
+	!	write(*,*) i
+	!end do
+	!kO=0.0
+	!do i=0, 20
+	!	kparallel=Gam+(i*(KK-Gam)/20)
+	!	kDel=kparallel-kO
+	!	kD=kD+sqrt(dot_product(kDel, kDel))	
+	!	kO=kparallel
+	!	call get_bands(kparallel, MatrixDimension, ZCntr, ZLength, a0, &
+	! 	b1, b2, eMass, hbar, nmAllow, ParaCntr, kD, HMatrix,ev, e0)
+	!	write(*,*) i
+	!end do
+
+	!do i=0, 20
+	!	kparallel=KK+(i*(MSpatial-KK)/20)
+	!	kDel=kparallel-kO
+	!	kD=kD+sqrt(dot_product(kDel, kDel))	
+	!	kO=kparallel
+	!	call get_bands(kparallel, MatrixDimension, ZCntr, ZLength, a0, &
+	! 	b1, b2, eMass, hbar, nmAllow, ParaCntr, kD, HMatrix, ev, e0)
+	!	write(*,*) i
 	!end do
 
 !	do i = 0, 10
@@ -208,146 +209,136 @@ PROGRAM GRAPHENE_BANDS
 		!write(*,*) i
 	!end do
 
-	!do i = 0, 10
-	!	kparallel = M + (i * (KK - M)/ 10)
-	!	kDel = kparallel - kO
-	!	kD = kD + sqrt(dot_product(kDel, kDel))	
-	!	kO = kparallel
-	!	call get_bands(kparallel, MatrixDimension, ZCntr, ZLength, a0, &
-	! 	b1, b2, eMass, hbar, nmAllow, ParaCntr, kD, HMatrix)
-	!end do
-
 	close(1) 
-
+	close(2)
 
 END PROGRAM GRAPHENE_BANDS
 
 
-
 !Have this subroutine write the matrix to a file
-SUBROUTINE get_bands(kparallel,MatrixDimension,ZCntr,ZLength,a0,b1,b2,eMass,hbar,nmAllow,ParaCntr,kD, HMatrix, ev)!This is too long for any more variables
+SUBROUTINE get_bands(kparallel,MatrixDimension,ZCntr,ZLength,a0,b1,b2,eMass,hbar,nmAllow,ParaCntr,kD,HMatrix,ev,e0,a1,a2)!This is too long for any more variables
 	IMPLICIT NONE
-	REAL(8), DIMENSION(MatrixDimension,MatrixDimension), INTENT(IN) :: HMatrix !Matrix of Hamiltonians
-	REAL(8), DIMENSION(3) :: G
-	INTEGER :: i, j, l, h, m, n, ierr, sig1, sig2, z, ParaCntr
-	REAL(8) :: Pi, kz, ParaEnergy, GSquare
-	INTEGER, INTENT(IN) :: MatrixDimension, ZCntr
-	REAL(8), INTENT(IN) :: ZLength, a0, hbar, eMass, kD, ev
-	REAL(8), DIMENSION(3), INTENT(IN) :: kparallel, b1, b2
-	INTEGER ,DIMENSION(ParaCntr,2), INTENT(IN) :: nmAllow
-	REAL(8), DIMENSION(MatrixDimension, MatrixDimension) :: JMatrix
-	REAL(8) :: Struct, VQ
-    REAL(8), allocatable :: rd(:),re(:),rz(:,:)
-	Pi = 4.0d0* atan(1.0d0)
-
+	REAL(8), DIMENSION(MatrixDimension,MatrixDimension), INTENT(IN)::HMatrix !Matrix of Hamiltonians
+	REAL(8), DIMENSION(3)::G, realPos, v1, v2
+	REAL(8), INTENT(OUT)::e0
+	INTEGER::i, j, l, h, m, n, ierr, sig1, sig2, z, ParaCntr, surfaceMult
+	REAL(8)::Pi, kz, ParaEnergy, GSquare, alpha
+	INTEGER, INTENT(IN)::MatrixDimension, ZCntr
+	REAL(8), INTENT(IN)::ZLength, a0, hbar, eMass, kD, ev
+	REAL(8), DIMENSION(3), INTENT(IN)::kparallel, b1, b2,a1,a2
+	INTEGER ,DIMENSION(ParaCntr,2), INTENT(IN)::nmAllow
+	REAL(8), DIMENSION(MatrixDimension, MatrixDimension)::JMatrix
+	REAL(8)::VQ, NormConst
+  REAL(8), ALLOCATABLE::rd(:),re(:),rz(:,:)
+	Pi=4.0d0*atan(1.0d0)
+	surfaceMult=2
 	allocate(rd(MatrixDimension), re(MatrixDimension), rz(MatrixDimension, MatrixDimension))
 
-	
-	i = 1
+	i=1
 	!clears JMatrix
-	do n = 1, MatrixDimension
-		do j = 1, MatrixDimension
-		JMatrix(n,j) = HMatrix(n,j)
+	do n=1, MatrixDimension
+		do j=1, MatrixDimension
+		JMatrix(n,j)=HMatrix(n,j)
 		end do
 	end do	
 	!write (*,*)JMatrix(i,i)
-	do n = 1, ParaCntr
-		G = nmallow(n,1) * b1 + nmallow(n,2) * b2
+	do n=1, ParaCntr
+		G=(nmallow(n,1)*b1)+(nmallow(n,2)*b2)
 		!GSquare = dot_product(G, G)	
 		!ParaEnergy = (GSquare * hbar**2)/(2 * eMass)
-		do z = 1, ZCntr
-			kz = z * Pi / ZLength
-			JMatrix(i, i) = JMatrix(i, i) + ((dot_product(kparallel + G, kparallel + G) + kz**2)/2)
-			!write(*,*)JMatrix(i,i) - hMatrix(i,i)		
-			i = i + 1	
+		do z=1, ZCntr
+			kz=z*Pi/ZLength
+			JMatrix(i, i)=JMatrix(i, i)+((dot_product(kparallel+G, kparallel+G)+kz**2)/2)
+			i=i+1	
 		end do
 					
 	end do
 	
-     !write(*,*)i,MatrixDimension
+  !write(*,*)i,MatrixDimension
 	call TRED2(MatrixDimension, MatrixDimension, JMatrix, rd, re, rz)
 	call TQL2(MatrixDimension, MatrixDimension, rd, re, rz, ierr)
 	if(ierr.ne.0)then
 		write(*,*)' ierr= ', ierr
 		stop ' eigenvalue calculation'
 	endif
-	
-!	call quicksort(rd, 1, MatrixDimension)
+	NormConst=0.0d0
+	do i=1, MatrixDimension
+		NormConst = rz(1,i)*rz(2,i)
+	end do
+	!write(*,*)NormConst
 
-!    write(1,'(1p21e14.5)')kD,(rd(i),i=1,min(20,MatrixDimension))
-!	write(1, fmt = "(A)", advance = 'no'), " k             Eigenvalues"
-	!write(1, fmt = "(F10.5)", advance = 'no'), kD
-	!write(1, fmt = "(A)"), ""
- 	!do i = 1, 20
- 		write(1,'(1p50e14.5)')kD,(ev*rd(i), i = 1, 20)
-		!write(1, fmt = "(A)", advance = 'no'), "     "	
-!		write(1, '(1pe14.5)', advance = 'no'), rd(i)	
-!		write(1, fmt = "(A)"), ""
-		!write(1, fmt = "(A)", advance = 'no'), ", "
-		!print *, rd(i)
- 	!end do
-	!write(1, fmt = "(A)"), " "
+	!stop
+	!EIGENVECTORS ARE NORMALISED
+	!rz(n, j) across all j contains the nth eigenvector
+	
+	if (e0==0.0d0) then
+		e0=rd(4)
+	else
+ 		write(1,'(1p50e14.5)')kD,(ev*(rd(i)-e0), i = 1, 20)
+		
+		v1=surfaceMult*a1
+		v2=surfaceMult*a2
+		do i=0,600
+			realpos=v1-(real(i,8)*(v1-v2)/600)
+			call facePlot(realPos, b1, b2, rz, rd, ZLength, MatrixDimension, kparallel, nmAllow, ZCntr, ParaCntr, v1, v2)
+		end do
+	end if
+
 	deallocate(rd, rz, re)
 END SUBROUTINE get_bands
 
 SUBROUTINE potential_fill(MatrixDimension, nmAllow, b1, b2, HMatrix, ZLength, Vol, ZCntr, ParaCntr, a0, d)
-	INTEGER, INTENT(IN) :: ZCntr, ParaCntr	
-	REAL(8), DIMENSION(MatrixDimension, MatrixDimension), INTENT(OUT) :: HMatrix
-	INTEGER, DIMENSION(ParaCntr, 2), INTENT(IN) :: nmAllow
-	REAL(8), DIMENSION(3), INTENT(IN) :: b1, b2, d
-	REAL(8), INTENT(IN) :: Vol, ZLength, a0
-	REAL(8) :: nConst
-	REAL(8), DIMENSION (3) :: GMu, GNU, kzmu, kznu, delGSig, delG
-	INTEGER :: h, i, j, l, sig1, sig2, z, zouter, it
-	REAL(8) :: VQ, Pi, dGz
-	COMPLEX(8) :: Struct, sf
-	REAL(8) :: omegaBulk
-	omegaBulk = ((3.57d0/0.529177d0)**3)/4.0d0!a0 is the angBohr conversion
-	Pi = 4.0d0 * atan(1.0d0)	
+	INTEGER, INTENT(IN)::ZCntr, ParaCntr	
+	REAL(8), DIMENSION(MatrixDimension, MatrixDimension), INTENT(OUT)::HMatrix
+	INTEGER, DIMENSION(ParaCntr, 2), INTENT(IN)::nmAllow
+	REAL(8), DIMENSION(3), INTENT(IN)::b1, b2, d
+	REAL(8), INTENT(IN)::Vol, ZLength, a0
+	REAL(8)::nConst
+	REAL(8), DIMENSION (3)::GMu, GNU, kzmu, kznu, delGSig, delG
+	INTEGER::h, i, j, l, sig1, sig2, z, zouter, it
+	REAL(8)::VQ, Pi, dGz
+	COMPLEX(8)::sf
+	REAL(8)::omegaBulk
+	omegaBulk=((3.57d0/0.529177d0)**3)/4.0d0!a0 is the angBohr conversion
+	Pi=4.0d0*atan(1.0d0)	
 
-
-	kznu = 0
-	h = 1
+	kznu=0
+	h=1
     !finds the potential for the [i,j] matrix element
-	i = 1
-	j = 1
-	do while (i <= MatrixDimension)
-		GNu = nmAllow(h, 1) * b1 + nmAllow(h, 2) * b2
-		do zouter = 1, ZCntr
-			l = 1
-			kznu(3) = zOuter * (Pi/ZLength)
-			j = 1
-			do while (j <= MatrixDimension)
-				GMu = nmAllow(l, 1) * b1 + nmAllow(l, 2) * b2
-				do z = 1, ZCntr
-					delG = GNu - GMu
-					delGSig = 0
-					kzmu(3) = z * Pi / ZLength
-					do sig1 = -1, 1,2 !steps by 2
-						do sig2 = -1, 1,2
-							dGz = sig1*kznu(3) - sig2*kzmu(3)
-							nConst = (sig1 * sig2)/(2 * Vol)
-							sf = 0.0
-							do it =-1,1,2
-								sf = sf + exp((0,1)*(it*(delG(1)*d(1)+delG(2)*d(2))+(dGz*ZLength/2)))
+	i=1
+	j=1
+	do while (i<=MatrixDimension)
+		GNu=(nmAllow(h, 1)*b1)+(nmAllow(h, 2)*b2)
+		do zouter=1, ZCntr
+			l=1
+			kznu(3)=zOuter*(Pi/ZLength)
+			j=1
+			do while (j<=MatrixDimension)
+				GMu=(nmAllow(l, 1)*b1)+(nmAllow(l, 2)*b2)
+				do z=1, ZCntr
+					delG=GNu-GMu
+					delGSig=0
+					kzmu(3)=z*Pi/ZLength
+					do sig1=-1, 1,2 !steps by 2
+						do sig2=-1, 1,2
+							dGz=(sig1*kznu(3))-(sig2*kzmu(3))
+							nConst=(sig1*sig2)/(2*Vol)
+							sf=0.0
+							do it=-1,1,2
+								sf=sf+exp((0,1)*(it*(delG(1)*d(1)+delG(2)*d(2))+(dGz*ZLength/2)))
 							end do
-							!write(*,*)dble(sf)
-							delGSig = delG + (sig1 * kznu) - (sig2 * kzmu) !Check that kznu & kzmu are the correct way round
-							HMatrix(i, j) = HMatrix(i, j) + nConst * (omegaBulk * VQ(delGsig) * dble(sf))
-
-
-							write(*,*) delGSig !It doesn't work without this line, I cant explain it
-
+							delGSig=delG+(sig1*kznu)-(sig2*kzmu) !Check that kznu & kzmu are the correct way round
+							HMatrix(i, j)=HMatrix(i, j)+(nConst*(omegaBulk*VQ(delGsig)*dble(sf)))
 						end do
 					end do
-					write(*,*) HMatrix(i,j)
-					j = j + 1
+					!write(*,*) HMatrix(i,j)
+					j=j+1
 				end do
-				l = l + 1
+				l=l+1
 			end do
-		i = i + 1
+		i=i+1
 		end do
-		h = h + 1
+		h=h+1
 		!write(*,*) Paracntr, h
 	end do
 
@@ -359,77 +350,70 @@ END SUBROUTINE potential_fill
 
 REAL(8) FUNCTION VQ(k)
 	IMPLICIT NONE
-	REAL(8), DIMENSION(3), INTENT(IN) :: k
-	REAL(8) b1, b2, b3, b4
-	b1 = 1.781d0
-	b2 = 1.424d0
-	b3 = 0.354d0
-	b4 = 0.938d0
+	REAL(8), DIMENSION(3), INTENT(IN)::k
+	REAL(8)::b1, b2, b3, b4
+	b1=1.781d0
+	b2=1.424d0
+	b3=0.354d0
+	b4=0.938d0
 
-	VQ = (b1 * ((b3 * dot_product(k,k)) - b2))/(4*(exp((b3 * dot_product(k,k)) - b4) + 1.0d0))
+	VQ=(b1*((b3*dot_product(k,k))-b2))/(4*(exp((b3*dot_product(k,k))-b4)+1.0d0))
 	
 END FUNCTION VQ
 
-COMPLEX(8) FUNCTION Struct(delG, ZLength, a0)
+
+
+SUBROUTINE facePlot(realPos, b1, b2, rz, rd, L, MatrixDimension, k, nmAllow, ZCntr, ParaCntr, v1, v2)	
 	IMPLICIT NONE
-	REAL(8), DIMENSION(3), INTENT(IN) :: delG
-	REAL(8), INTENT(IN) :: ZLength, a0	
+	REAL(8), DIMENSION(3), INTENT(IN)::b1, b2, k, realPos, v1, v2
+	INTEGER, INTENT(IN)::MatrixDimension, ParaCntr, ZCntr
+	REAL(8), INTENT(IN)::L
+	REAL(8), INTENT(IN), DIMENSION(MatrixDimension)::rd
+	REAL(8), INTENT(IN), DIMENSION(MatrixDimension, MatrixDimension)::rz
+	INTEGER, INTENT(IN), DIMENSION(ParaCntr,2)::nmAllow
+
+	INTEGER:: kn, realZCntr, h, nmax, n
+	COMPLEX(8)::i, r, eMult, fourierConst, y, fourierSol
+	REAL(8)::pi, s, z, cn, alpha
+	REAL(8), DIMENSION(3)::kG
+	i=(0.0d0, 1.0d0)	
+	pi=4.0d0*atan(1.0d0)
+	nmax=30
 	
-	!This method of e^ix works
-	COMPLEX(8) I
-	REAL(8), DIMENSION(3) :: d, RNeg, RPos
+	!these lines find the proportion of line v2-v1 this point is along, this is needed for the fourier expansion
+	s=dot_product(realPos-v1, realPos-v1)/dot_product(v2-v1, v2-v1)
+	s=sqrt(s)
 
-	I = (0,1.0)
-	d(1) = 0.0
-	d(2) = a0
-	d(3) = 0
+	do realZCntr=0, 50
+	r=0.0d0
+	fourierSol=0.0d0
+	z=-L/2+(realZCntr*L/50)
+	do h=1, ParaCntr
+		kG=k+(nmAllow(h,1)*b1)+(nmAllow(h,2)*b2)
+		alpha=dot_product(kG, v2-v1)
+		fourierConst=(0.0d0, 0.0d0)
+		y=(0.0d0, 0.0d0)
+		!finds the complex fourier expansion of parallel component
+		do n=-nmax, nmax
+			eMult=i*(alpha-(2*pi*n))
+			fourierConst=(exp(eMult)-1)/eMult
+			fourierConst=fourierConst*exp(i*dot_product(kG, v1))
+			y=y+fourierConst*exp(i*2*n*pi*s)
+		end do
+		
+			do kn=1, ZCntr
+				cn=rz(kn+(ZCntr*(h-1)),1)		!This will cycle through all MatrixDimension elements of the eigenvector
+				fourierSol=fourierSol+cn*y*sin(real(kn, 8)*pi*(z+(L/2))/L)
+				r=r+cn*exp(i*dot_product(kG,realPos))*sin(real(kn, 8)*pi*(z+(L/2))/L)
+			end do
+	end do
+		write(2, '(1p6e14.5)') realPos(1), r, fourierSol, z
+	end do
 
-	RNeg(1) = -d(1)
-	RNeg(2) = -d(2)
-	RNeg(3) = -d(3) + ZLength/2
-
-	RPos(1) = d(1)
-	RPos(2) = d(2)
-	RPos(3) = d(3) + ZLength/2
-	
-	Struct = exp(I * dot_product(delG, RNeg)) + exp(I * dot_product(delG, RPos))
-	!structure factor
-	
-END FUNCTION Struct
-
-
-! quicksort.f -*-f90-*-
-! Author: t-nissie
-! License: GPLv3
-! Gist: https://gist.github.com/t-nissie/479f0f16966925fa29ea
-!!
-recursive subroutine quicksort(a, first, last)
-  implicit none
-  real*8  a(*), x, t
-  integer first, last
-  integer i, j
-
-  x = a( (first+last) / 2 )
-  i = first
-  j = last
-  do
-     do while (a(i) < x)
-        i=i+1
-     end do
-     do while (x < a(j))
-        j=j-1
-     end do
-     if (i >= j) exit
-     t = a(i);  a(i) = a(j);  a(j) = t
-     i=i+1
-     j=j-1
-  end do
-  if (first < i-1) call quicksort(a, first, i-1)
-  if (j+1 < last)  call quicksort(a, j+1, last)
-end subroutine quicksort
+END SUBROUTINE
 
 
-!Subroutines for finding Eigenvalues
+!Subroutines for finding Eigenvalues & Eigenvectors
 SUBROUTINE TQL2(NM,N,D,E,Z,IER)
 !-------------------------------------------------------------------------
 !     QL METHOD TO DETERMINE THE EIGENVALUES AND EIGENVECTORS OF:
