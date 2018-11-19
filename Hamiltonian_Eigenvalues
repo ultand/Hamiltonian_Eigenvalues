@@ -308,6 +308,7 @@ END SUBROUTINE get_bands
 SUBROUTINE potential_fill(MatrixDimension, nmAllow, b1, b2, HMatrix, ZLength, Vol, ZCntr, ParaCntr, a0, d)
 	!This subroutine fills 'HMatrix' with values given from the potential within graphene.
 	!This 'potential' matrix does not change for a given energy input and zLength, so only needs to be calculated once
+	IMPLICIT NONE
 	INTEGER, INTENT(IN)::ZCntr, ParaCntr	
 	REAL(8), DIMENSION(MatrixDimension, MatrixDimension), INTENT(OUT)::HMatrix
 	INTEGER, DIMENSION(ParaCntr, 2), INTENT(IN)::nmAllow
@@ -461,6 +462,7 @@ END SUBROUTINE
 SUBROUTINE GreensMatrixCalc(JMatrix, MatrixDimension, kparallel)
 	!If this is inverted it should return the greens Matrix for a given wavevector
 	!Assumes overlap matrix is unity matrix
+	IMPLICIT NONE	
 	INTEGER, INTENT(IN)::MatrixDimension
 	REAL(8), INTENT(IN), DIMENSION(MatrixDimension, MatrixDimension)::JMatrix
 	REAL(8), INTENT(IN), DIMENSION(3)::kparallel
@@ -481,8 +483,9 @@ SUBROUTINE GreensMatrixCalc(JMatrix, MatrixDimension, kparallel)
 	
 END SUBROUTINE
 
-SUBROUTINE EmbeddingPotential(MatrixDimension, kparallel, r, rprime, rd)
+SUBROUTINE EmbeddingPotential(MatrixDimension, kparallel, sVal, sValp, zVal, zValp, zLength rd)
 	!This will find Greens function for a give r and rprime on the embedding surface for a given wavevector
+	IMPLICIT NONE
 	INTEGER, INTENT(IN)::MatrixDimension	
 	REAL(8), DIMENSION(6,50601)::psiSol
 	COMPLEX(8), DIMENSION(6,50601)::cn
@@ -529,8 +532,9 @@ surfaceMult, Vol, i, lineCount, psiSol, j, cn)
 			!write(*,*)lineCount
 		end do
 		!finds psi and psi real and complex parts
-		psi=(psiSol(3,waveFunc(psiSol, sval, zVal, sDiff)) ,psiSol(4,waveFunc(psiSol, sval, zVal, sDiff)))
-		psip=(psiSol(3,waveFunc(psiSol, svalp, zValp, sDiff)) ,psiSol(4,waveFunc(psiSol, svalp, zValp, sDiff)))
+		!this needs to use r and rprime
+		psi=(psiSol(3,waveFunc(psiSol, sval, zVal, sDiff)), psiSol(4,waveFunc(psiSol, sval, zVal, sDiff)))
+		psip=(psiSol(3,waveFunc(psiSol, svalp, zValp, sDiff)), psiSol(4,waveFunc(psiSol, svalp, zValp, sDiff)))
 		psip=CONJG(psip)
 		GreenSum=GreenSum+(psip*psi/(rd(i)-Energy)
 	end do
@@ -538,78 +542,78 @@ surfaceMult, Vol, i, lineCount, psiSol, j, cn)
 		
 	!approximates the integrated part of the embedding potential
 	!find inverse green and green derivate and multiply by the 'area' surrounding a point
-	do i=1, MatrixDimension
-		do face=1,6
-			if face==1 then
-				v1=
-				v2=
-			else if face==2
-				v1=
-				v2=
-			else if face==3
-				v1=
-				v2=
-			else if face==4
-				v1=
-				v2=
-			else if face==5
-				v1=
-				v2=
-			else if face=6
-				v1=
-				v2=
-			end if
-			
-			!Should find vector normal to surface
-			!Only works if surface goes clockwise
-			if v2(1).GE. 0.0d0 then
-				!Accounts for normVec along y axis
-				if (v2(2)-v1(2)).NE. 0.0d0 then
-					normVec(1)=1.0d0
-					normVec(2)=-(v2(1)-v1(1))/(v2(2)-v1(2))
-					normVec(3)=0.0d0
-				else
-					normVec(1)=0.0d0
-					normVec(2)=1.0d0
-					normVec(3)=0.0d0
-				end if		
-			else 
-				if (v2(2)-v1(2)) .NE. 0.0d0 then
-					normVec(1)=-1.0d0
-					normVec(2)=(v2(1)-v1(1))/(v2(2)-v1(2))
-					normVec(3)=0.0d0
-				else
-					normVec(1)=0.0d0
-					normVec(2)=-1.0d0
-					normVec(3)=0.0d0
-			end if
-			normVec=normVec/sqrt(dot_product(normVec, normVec))!Normalises normal vector
-
+	!figure out where loop over i part of matrix should be placed
+	do face=1,6
+		if face==1 then
+			v1=
+			v2=
+		else if face==2
+			v1=
+			v2=
+		else if face==3
+			v1=
+			v2=
+		else if face==4
+			v1=
+			v2=
+		else if face==5
+			v1=
+			v2=
+		else if face=6
+			v1=
+			v2=
+		end if
+		
+		!Should find vector normal to surface
+		!Only works if surface goes clockwise
+		if v2(1).GE. 0.0d0 then
+			!Accounts for normVec along y axis
+			if (v2(2)-v1(2)).NE. 0.0d0 then
+				normVec(1)=1.0d0
+				normVec(2)=-(v2(1)-v1(1))/(v2(2)-v1(2))
+				normVec(3)=0.0d0
+			else
+				normVec(1)=0.0d0
+				normVec(2)=1.0d0
+				normVec(3)=0.0d0
+			end if		
+		else 
+			if (v2(2)-v1(2)) .NE. 0.0d0 then
+				normVec(1)=-1.0d0
+				normVec(2)=(v2(1)-v1(1))/(v2(2)-v1(2))
+				normVec(3)=0.0d0
+			else
+				normVec(1)=0.0d0
+				normVec(2)=-1.0d0
+				normVec(3)=0.0d0
+		end if
+		normVec=normVec/sqrt(dot_product(normVec, normVec))!Normalises normal vector
 			do j=0,500
-				realpos=v1-(real(j,8)*(v1-v2)/500)
-				call facePlot(realPos, b1, b2, rz, rd, ZLength, MatrixDimension, kparallel, nmAllow, ZCntr, ParaCntr, v1, v2, nmax, &
+			realpos=v1-(real(j,8)*(v1-v2)/500)
+			call facePlot(realPos, b1, b2, rz, rd, ZLength, MatrixDimension, kparallel, nmAllow, ZCntr, ParaCntr, v1, v2, nmax, &
 surfaceMult, Vol, i, lineCount, psiSol, j, cn)
 			!write(*,*)lineCount
-			end do
-
-			if face==1 then
-				psi=(psiSol(3,waveFunc(psiSol, sval, zVal, sD)) ,psiSol(4,waveFunc(psiSol, sval, zVal, sD)))
-			end if
-	
-			intGreenSum=(0.0d0,0.0d0)
-			do j=0,500
-				do l=0,100
-					!Ensure that this sums over the correct r' values
-					zValpp=-(ZLength/2)+(l*zLength/100)
-					svalp=s*j/500
-					psipp=(psiSol(3,waveFunc(psiSol, svalpp, zValpp, sDiff)) ,psiSol(4,waveFunc(psiSol, svalpp, zValpp, sDiff)))
-					
-					derivGreen=i*dot_product(kparallel, normVec)*(psipp*psip/(rd(i)-Energy)
-					intGreenSum=intGreenSum+(psipp*psi/(rd(i)-Energy))+derivGreenSum
-				end do
-			end do
-
 		end do
+
+		if face==1 then
+			psi=(psiSol(3,waveFunc(psiSol, sval, zVal, sD)), psiSol(4,waveFunc(psiSol, sval, zVal, sD)))
+		end if
+	
+		intGreenSum=(0.0d0, 0.0d0)
+		!these loops need to calculate the whole integral part of the embedding potential
+		do j=0,500
+			do l=0,100
+				!this needs to use r and rprime
+				!Ensure that this sums over the correct r' values
+				zValpp=-(real(zLength, 8)/2.0d0)+(real(l, 8)*zLength/100.0d0)
+				svalpp=s*real(j, 8)/500.0d0
+				psipp=(psiSol(3,waveFunc(psiSol, svalpp, zValpp, sDiff)), psiSol(4,waveFunc(psiSol, svalpp, zValpp, sDiff)))
+				
+				derivGreen=i*dot_product(normVec, kParallel)*(psipp*psip/(rd(i)-Energy)
+				intGreen=(psi*psipp/(rd(i)-Energy)
+			end do
+		end do
+
 	end do
 
 	embedPot=(-2/GreenSum)+(intGreenSum)
@@ -620,6 +624,7 @@ END SUBROUTINE
 
 !reads find the array location needed for a given location on the surface
 INTEGER FUNCTION waveFunc(psiSol, sVal, zVal, sDiff)
+	IMPLICIT NONE
 	REAL(8), INTENT(IN):: sVal, zVal, sDiff, zDiff
 	REAL(8), INTENT(IN), DIMENSION(6,50601)::psiSol
 	INTEGER::check, i, iS
