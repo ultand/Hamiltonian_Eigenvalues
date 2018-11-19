@@ -150,8 +150,12 @@ PROGRAM GRAPHENE_BANDS
 		n=-minVec
 	end do
 	!print *, ParaCntr, ZCntr !used for a check
-	open(unit = 1, file = 'Eigen.txt')
-	open(unit = 2, file = 'facePlot.txt')
+	open(unit=1, file='Eigen.txt')
+	open(unit=2, file='facePlot.txt')
+	open(unit=3, file='waveFunctRead.txt')
+	!The least elegant solution you may ever see, creates a file to read values from and deletes it at the end
+	!waveFunctRead has the same content as facePlot, but no white space
+	!white space necessary to plot, but may confuse when reading from file
 	kO=MSpatial
 
 	allocate(HMatrix(MatrixDimension, MatrixDimension))
@@ -208,6 +212,7 @@ PROGRAM GRAPHENE_BANDS
 
 	close(1) 
 	close(2)
+	close(3, status='delete')
 
 END PROGRAM GRAPHENE_BANDS
 
@@ -217,18 +222,19 @@ kD, HMatrix, ev, e0, a1, a2, Vol)!This is too long for any more variables
 	REAL(8), DIMENSION(MatrixDimension,MatrixDimension), INTENT(IN)::HMatrix !Matrix of Hamiltonians
 	REAL(8), DIMENSION(3)::G, realPos, v1, v2
 	REAL(8), INTENT(OUT)::e0
-	INTEGER::i, j, l, h, m, n, ierr, sig1, sig2, z, ParaCntr, surfaceMult, nmax
+	INTEGER::i, j, l, h, m, n, ierr, sig1, sig2, z, ParaCntr, surfaceMult, nmax, lineCount
 	REAL(8)::Pi, kz, ParaEnergy, GSquare, alpha
 	INTEGER, INTENT(IN)::MatrixDimension, ZCntr
 	REAL(8), INTENT(IN)::ZLength, a0, hbar, eMass, kD, ev, Vol
 	REAL(8), DIMENSION(3), INTENT(IN)::kparallel, b1, b2,a1,a2
 	INTEGER ,DIMENSION(ParaCntr,2), INTENT(IN)::nmAllow
 	REAL(8), DIMENSION(MatrixDimension, MatrixDimension)::JMatrix
-	REAL(8)::VQ, NormConst, am, an
-  REAL(8), ALLOCATABLE::rd(:),re(:),rz(:,:)
+	REAL(8)::VQ, NormConst, am, an, waveFunc
+ 	REAL(8), ALLOCATABLE::rd(:),re(:),rz(:,:), psiSol(:,:)
 	Pi=4.0d0*atan(1.0d0)
+	lineCount=0
 
-	allocate(rd(MatrixDimension), re(MatrixDimension), rz(MatrixDimension, MatrixDimension))
+	allocate(rd(MatrixDimension), re(MatrixDimension), rz(MatrixDimension, MatrixDimension), psiSol(6,501*101))
 
 	i=1
 	!clears JMatrix
@@ -285,14 +291,18 @@ kD, HMatrix, ev, e0, a1, a2, Vol)!This is too long for any more variables
 		write(*,*) "Input max integer for fourier series: "
 		read(*,*) nmax
 		write(*,*) matrixDimension
+
 		do i=0,500
 			realpos=v1-(real(i,8)*(v1-v2)/500)
 			call facePlot(realPos, b1, b2, rz, rd, ZLength, MatrixDimension, kparallel, nmAllow, ZCntr, ParaCntr, v1, v2, nmax, &
-surfaceMult, Vol)
+surfaceMult, Vol, 1, lineCount, psiSol)
+			write(*,*)lineCount
 		end do
 	end if
+	!write(*,*)count(modFourier.NE.-1)
+	!i=waveFunc(1.0d0/500.0d0, Zlength/100.0d0, 0.8d0, ZLength/2.0d0)!waveFunc(sDiff, zDiff, sVal, zVal)
 
-	deallocate(rd, rz, re)
+	deallocate(rd, rz, re, psiSol)
 END SUBROUTINE get_bands
 
 SUBROUTINE potential_fill(MatrixDimension, nmAllow, b1, b2, HMatrix, ZLength, Vol, ZCntr, ParaCntr, a0, d)
@@ -369,27 +379,35 @@ END FUNCTION VQ
 
 
 
-SUBROUTINE facePlot(realPos, b1, b2, rz, rd, L, MatrixDimension, k, nmAllow, ZCntr, ParaCntr, v1, v2, nmax, surfaceMult, Vol, Eigenstate)
+SUBROUTINE facePlot(realPos, b1, b2, rz, rd, L, MatrixDimension, k, nmAllow, ZCntr, ParaCntr, v1, v2, nmax, surfaceMult, Vol, &
+	Eigenstate, lineCount, psiSol, restart)
 	!This subroutine plots creates a file that can be used to plot the position probabilty along the face v1-v2 for a given EigenState
 	!Output file has normalised the wavefunction within each lattice
 	!THIS SUBROUTINE WILL NEED TO BE CALLED FOR ALL SIX(?) FACES OF THE EMBEDDING SURFACE
 	IMPLICIT NONE
 	REAL(8), DIMENSION(3), INTENT(IN)::b1, b2, k, realPos, v1, v2
-	INTEGER, INTENT(IN)::MatrixDimension, ParaCntr, ZCntr, nmax, surfaceMult, EigenState
+	INTEGER, INTENT(IN)::MatrixDimension, ParaCntr, ZCntr, nmax, surfaceMult, EigenState, restart
 	REAL(8), INTENT(IN)::L, Vol
 	REAL(8), INTENT(IN), DIMENSION(MatrixDimension)::rd
 	REAL(8), INTENT(IN), DIMENSION(MatrixDimension, MatrixDimension)::rz
 	INTEGER, INTENT(IN), DIMENSION(ParaCntr,2)::nmAllow
+	INTEGER, INTENT(OUT)::lineCount
+	REAL(8), INTENT(OUT),DIMENSION(6,501*101)::psiSol
 
-	INTEGER:: kn, realZCntr, h, n
+	INTEGER:: kn, realZCntr, h, n, c
 	COMPLEX(8)::i, r, eMult, fourierConst, y, fourierSol
-	REAL(8)::pi, s, z, cn, alpha, modR, modFourier, Holder
+	REAL(8)::pi, s, z, cn, alpha, Holder
 	REAL(8), DIMENSION(3)::kG
 	i=(0.0d0, 1.0d0)	
 	pi=4.0d0*atan(1.0d0)
 	!these lines find the proportion of line v2-v1 this point is along, this is needed for the fourier expansion
 	s=dot_product(realPos-v1, realPos-v1)/dot_product(v2-v1, v2-v1)
 	s=sqrt(s)
+
+	!if a new eigenstate is chosen then this will replace the old psi sol with the new psisol
+	if restart==0 then
+		c=0
+	end if
 	
 	!finds the z value at 100 evenly spaced points
 	do realZCntr=0, 100
@@ -418,37 +436,224 @@ SUBROUTINE facePlot(realPos, b1, b2, rz, rd, L, MatrixDimension, k, nmAllow, ZCn
 		!Normalises the wavefunction components
 		fourierSol=fourierSol*sqrt(2/(L*Vol))
 		r=r*sqrt(2/(L*Vol))
+		c=c+1
 		!finds the 'position probability' from the wavefunction
 		modR=abs(r)**2
 		modFourier=abs(fourierSol)**2
 		write(2, '(1p6e14.5)') s*real(surfaceMult,8)*2.46d0, z, modR, modFourier, abs(r-fourierSol)**2
+		write(3, '(1p6e14.5)') s*real(surfaceMult,8)*2.46d0, z, modR, modFourier, abs(r-fourierSol)**2
 		!This approximates the difference integral between the fourier and 'exact' solutions over the face
 		Holder=Holder+((L/100.0d0)*(s*real(surfaceMult,8)*2.46d0/500.0d0)*abs(r-fourierSol)**2)
+		psiSol(1,c)=s*real(surfaceMult,8)*2.46d0
+		psiSol(2,c)=z
+		psiSol(3,c)=real(r)
+		psiSol(4,c)=aimag(r)
+		psiSol(5,c)=real(fourierSol)
+		psiSol(6,c)=aimag(fourierSol)
+		lineCount=lineCount+1
 	end do
 	
+	write(*,*)c
 	write(2, *) ' '
 	write(*,*)Holder
 END SUBROUTINE
 
-SUBROUTINE Greens(MatrixDimension)
-	!This will need Energy, wavefunction components, and eigenvalues
-	!Read through file that I output with wavefunction values
-	INTEGER, INTENT(IN)::MatrixDimension	
+SUBROUTINE GreensMatrixCalc(JMatrix, MatrixDimension, kparallel)
+	!If this is inverted it should return the greens Matrix for a given wavevector
+	!Assumes overlap matrix is unity matrix
+	INTEGER, INTENT(IN)::MatrixDimension
+	REAL(8), INTENT(IN), DIMENSION(MatrixDimension, MatrixDimension)::JMatrix
+	REAL(8), INTENT(IN), DIMENSION(3)::kparallel
 
-
-	REAL(8), DIMENSION(2)::r, rp
-	COMPLEX(8)::psi, psip, GreenFunc
+	INTEGER::j
+	REAL(8), DIMENSION(MatrixDimension, MatrixDimension)::IMatrix, GreensMatrix
 	REAL(8)::Energy
-	REAL(8), DIMENSION(MatrixDimension)::rd	
-	
-	psip=CONJG(psip)
-	GreenFunc=GreenFunc+(psi*psip)/(rd(stateval)-Energy)
+	COMPLEX(8)::i
 
+	i=(0.0d0, 1.0d0)
+	Energy=0.5d0*(kparallel**2)+VQ(kparallel)
+	
+	do j=1,MatrixDimension
+		IMatrix(j,j)=Energy
+	end do
+	
+	GreensMatrix=IMatrix-JMatrix
 	
 END SUBROUTINE
 
-!reads psi(r) from file
-FUNCTION waveFunc()
+SUBROUTINE EmbeddingPotential(MatrixDimension, kparallel, r, rprime, rd)
+	!This will find Greens function for a give r and rprime on the embedding surface for a given wavevector
+	INTEGER, INTENT(IN)::MatrixDimension	
+	REAL(8), DIMENSION(6,50601)::psiSol
+	COMPLEX(8), DIMENSION(6,50601)::cn
+	!psiSol(1,...) is the true 's' coordinate
+	!psiSol(2,...)is the z coordinate
+	!psiSol(3,...)and psiSol(4,...) are the real & complex part of non fourier expansion
+	!psiSol(5,...)and psiSol(6,...) are the real & complex part of the fourier expansion
+	INTEGER::i, check
+	COMPLEX(8)::psi, psip, GreenFunc
+	REAL(8)::Energy, sDiff
+	REAL(8), DIMENSION(MatrixDimension)::rd	
+
+	!this is used to find the sDiff and zDiff
+	do j=0,1
+		call facePlot(realPos, b1, b2, rz, rd, ZLength, MatrixDimension, kparallel, nmAllow, ZCntr, ParaCntr, v1, v2, nmax, &
+surfaceMult, Vol, i, lineCount, psiSol, j, cn)
+	end do
+
+	zDiff=psiSol(2,2)-psiSol(2,1)
+	i=1
+	check=0
+	do while check=0
+		if psiSol(1,1)==psiSol(1,i) then
+			i=i+1
+		else 
+			sDiff=psiSol(1,i)-psiSol(1,1)
+			check=1
+		end if
+	end do
+	
+	Energy=0.5d0*(k**2)+VQ(k)
+	GreenSum=0.0d0
+
+	!used to find the non integrated term in the embedding potential
+	do i=1, MatrixDimension
+		!find psi(r) for ith eigenstate
+		!for ith eignestate find psi(r')
+		!use these two and eigenvalue to evaluate Greens matrix
+		!Loop over all eigenstates
+		do j=0,500
+			realpos=v1-(real(j,8)*(v1-v2)/500)
+			call facePlot(realPos, b1, b2, rz, rd, ZLength, MatrixDimension, kparallel, nmAllow, ZCntr, ParaCntr, v1, v2, nmax, &
+surfaceMult, Vol, i, lineCount, psiSol, j, cn)
+			!write(*,*)lineCount
+		end do
+		!finds psi and psi real and complex parts
+		psi=(psiSol(3,waveFunc(psiSol, sval, zVal, sDiff)) ,psiSol(4,waveFunc(psiSol, sval, zVal, sDiff)))
+		psip=(psiSol(3,waveFunc(psiSol, svalp, zValp, sDiff)) ,psiSol(4,waveFunc(psiSol, svalp, zValp, sDiff)))
+		psip=CONJG(psip)
+		GreenSum=GreenSum+(psip*psi/(rd(i)-Energy)
+	end do
+
+		
+	!approximates the integrated part of the embedding potential
+	!find inverse green and green derivate and multiply by the 'area' surrounding a point
+	do i=1, MatrixDimension
+		do face=1,6
+			if face==1 then
+				v1=
+				v2=
+			else if face==2
+				v1=
+				v2=
+			else if face==3
+				v1=
+				v2=
+			else if face==4
+				v1=
+				v2=
+			else if face==5
+				v1=
+				v2=
+			else if face=6
+				v1=
+				v2=
+			end if
+			
+			!Should find vector normal to surface
+			!Only works if surface goes clockwise
+			if v2(1).GE. 0.0d0 then
+				!Accounts for normVec along y axis
+				if (v2(2)-v1(2)).NE. 0.0d0 then
+					normVec(1)=1.0d0
+					normVec(2)=-(v2(1)-v1(1))/(v2(2)-v1(2))
+					normVec(3)=0.0d0
+				else
+					normVec(1)=0.0d0
+					normVec(2)=1.0d0
+					normVec(3)=0.0d0
+				end if		
+			else 
+				if (v2(2)-v1(2)) .NE. 0.0d0 then
+					normVec(1)=-1.0d0
+					normVec(2)=(v2(1)-v1(1))/(v2(2)-v1(2))
+					normVec(3)=0.0d0
+				else
+					normVec(1)=0.0d0
+					normVec(2)=-1.0d0
+					normVec(3)=0.0d0
+			end if
+			normVec=normVec/sqrt(dot_product(normVec, normVec))!Normalises normal vector
+
+			do j=0,500
+				realpos=v1-(real(j,8)*(v1-v2)/500)
+				call facePlot(realPos, b1, b2, rz, rd, ZLength, MatrixDimension, kparallel, nmAllow, ZCntr, ParaCntr, v1, v2, nmax, &
+surfaceMult, Vol, i, lineCount, psiSol, j, cn)
+			!write(*,*)lineCount
+			end do
+
+			if face==1 then
+				psi=(psiSol(3,waveFunc(psiSol, sval, zVal, sD)) ,psiSol(4,waveFunc(psiSol, sval, zVal, sD)))
+			end if
+	
+			intGreenSum=(0.0d0,0.0d0)
+			do j=0,500
+				do l=0,100
+					!Ensure that this sums over the correct r' values
+					zValpp=-(ZLength/2)+(l*zLength/100)
+					svalp=s*j/500
+					psipp=(psiSol(3,waveFunc(psiSol, svalpp, zValpp, sDiff)) ,psiSol(4,waveFunc(psiSol, svalpp, zValpp, sDiff)))
+					
+					derivGreen=i*dot_product(kparallel, normVec)*(psipp*psip/(rd(i)-Energy)
+					intGreenSum=intGreenSum+(psipp*psi/(rd(i)-Energy))+derivGreenSum
+				end do
+			end do
+
+		end do
+	end do
+
+	embedPot=(-2/GreenSum)+(intGreenSum)
+	!psip=CONJG(psip)
+	!GreenFunc=GreenFunc+(psi*psip)/(rd(stateval)-Energy)
+
+END SUBROUTINE
+
+!reads find the array location needed for a given location on the surface
+INTEGER FUNCTION waveFunc(psiSol, sVal, zVal, sDiff)
+	REAL(8), INTENT(IN):: sVal, zVal, sDiff, zDiff
+	REAL(8), INTENT(IN), DIMENSION(6,50601)::psiSol
+	INTEGER::check, i, iS
+	REAL(8)::sRead, zRead, exactPsi, fourierPsi, psiDiff
+	i=0
+	check=0
+	do while check=0
+		i=i+1
+		sRead=psiSol(1, i)
+		if sRead+sDiff-sVal.GE.0.0d0 then	
+			if sRead+sDiff-sVal.GE.abs(sRead-sVal) then
+				iS=i+zPoints
+				check=1
+			else
+				iS=i
+				check=1
+			end if
+		end if
+	end do
+
+	check=0
+	i=iS
+	do while check=0
+		zRead=psiSol(2,i)
+		zReadHigh=psiSol(2,i+1)
+		if zReadHigh.GE.zVal then
+			if (zReadHigh-zVal).GE.abs(zRead-zVal) then
+				iS=i
+			else
+				iS=i+1
+			end if
+		end if
+		i=i+1
+	end do
 
 END FUNCTION
 
