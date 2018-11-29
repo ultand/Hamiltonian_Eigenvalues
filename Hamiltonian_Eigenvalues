@@ -106,7 +106,7 @@ PROGRAM GRAPHENE_BANDS
 
 	allocate(nvert(3, faceNum+1))
 
-	do j=1, faceNum
+	do j=1, faceNum+1
 		read(1, *) a1vert, a2vert
 		nvert(1, j)=a1vert*a1(1)+a2vert*a2(1)
 		nvert(2, j)=a1vert*a1(2)+a2vert*a2(2)
@@ -115,7 +115,7 @@ PROGRAM GRAPHENE_BANDS
 
 	close(1)
 	
-	nvert(1:3, faceNum+1)=nvert(1:3, 1)
+	!nvert(1:3, faceNum+1)=nvert(1:3, 1)
 
 	ZLength=ZLength/AngBohr	!convert zlength to Bohr radii
 	Volume=ZLength*sqrt(0.75d0)*a0**2
@@ -291,8 +291,8 @@ kD, HMatrix, ev, e0, a1, a2, Vol, nvert, nmax, purpose, faceNum)
 		END SUBROUTINE
 
 		SUBROUTINE embedPotential(embeddingPotential, b1, b2, kparallel, s, sp, z, zp, MatrixDimension, ParaCntr, ZCntr, nmax, &
-faceNum, nVert, rz, nmallow, zLength, rd)
-			REAL(8), INTENT(IN)::zLength, s, sp, z, zp
+faceNum, nVert, rz, nmallow, zLength, rd, e0)
+			REAL(8), INTENT(IN)::zLength, s, sp, z, zp, e0
 			COMPLEX(8), INTENT(OUT)::embeddingPotential
 			REAL(8), INTENT(IN), DIMENSION(3)::b1, b2, kparallel
 			INTEGER, INTENT(IN)::MatrixDimension, ParaCntr, ZCntr, nmax, faceNum
@@ -301,8 +301,8 @@ faceNum, nVert, rz, nmallow, zLength, rd)
 			REAL(8), ALLOCATABLE, DIMENSION(:,:), INTENT(IN)::nVert
 			INTEGER, INTENT(IN), DIMENSION(ParaCntr, 2)::nmallow
 			REAL(8), DIMENSION(3)::v1, v2, normVec
-			COMPLEX(8), DIMENSION(6*MatrixDimension*((2*nmax)+1),6*MatrixDimension*((2*nmax)+1))::gMatrix, invgMatrix	
-			COMPLEX(8), DIMENSION(6*MatrixDimension*((2*nmax)+1))::bsetVec1, bsetVec2, bsetVec3
+			COMPLEX(8),  DIMENSION(faceNum*MatrixDimension*((2*nmax)+1), faceNum*MatrixDimension*((2*nmax)+1))::gMatrix, invgMatrix	
+			COMPLEX(8), DIMENSION(faceNum*MatrixDimension*((2*nmax)+1))::bsetVec1, bsetVec2, bsetVec3
 			COMPLEX(8)::invGreen, derivGreen, invintGreen, intGreen
 			REAL(8)::faceLength, pArea, spp, zpp
 			INTEGER:: j, l, m, h, face
@@ -410,12 +410,12 @@ surfaceMult, Vol, 1, lineCount, psiSol, i)
 	!write(*,*)count(modFourier.NE.-1)
 	!i=waveFunc(1.0d0/500.0d0, Zlength/100.0d0, 0.8d0, ZLength/2.0d0)!waveFunc(sDiff, zDiff, sVal, zVal)
 		call embedPotential(embeddingPotential, b1, b2, kparallel, s, sp, zloc, zp, MatrixDimension, ParaCntr, ZCntr, nmax, &
-faceNum, nVert, rz, nmallow, zLength, rd)
+faceNum, nVert, rz, nmallow, zLength, rd, e0)
 	else if(purpose .EQ. 2) then
-		s=0.7d0
-		sp=0.3d0
-		zloc=-L/5.0d0
-		zp=-L/10.0d0
+		s=0.2d0
+		sp=0.2d0
+		zloc=L/5.0d0
+		zp=L/5.0d0
 		call DOS(zLength,s, sp, zloc, zp, e0, b1, b2, MatrixDimension, ParaCntr, ZCntr, nmax, faceNum, rz, rd, nVert, nmallow)
 	end if
 
@@ -506,9 +506,9 @@ SUBROUTINE DOS(zLength,s, sp, z, zp, e0, b1, b2, MatrixDimension, ParaCntr, ZCnt
 !finds the density of states at some point on the surface
 	IMPLICIT NONE
 	INTERFACE
-		SUBROUTINE basisSetVectorFill(s, z, zLength, face, bSetVec, ParaCntr, ZCntr, nmax, MatrixDimension, nvert)
-			INTEGER, INTENT(IN)::ParaCntr, ZCntr, nmax, face, MatrixDimension
-			COMPLEX(8), INTENT(OUT), DIMENSION(6*MatrixDimension*((2*nmax)+1))::bSetVec
+		SUBROUTINE basisSetVectorFill(s, z, zLength, face, bSetVec, ParaCntr, ZCntr, nmax, MatrixDimension, nvert, faceNum)
+			INTEGER, INTENT(IN)::ParaCntr, ZCntr, nmax, face, MatrixDimension, faceNum
+			COMPLEX(8), INTENT(OUT), DIMENSION(faceNum*MatrixDimension*((2*nmax)+1))::bSetVec
 			REAL(8), INTENT(IN)::s, z, zLength
 			REAL(8), ALLOCATABLE, DIMENSION(:,:), INTENT(IN)::nVert
 			INTEGER::faceTot, h, kz, n
@@ -517,17 +517,24 @@ SUBROUTINE DOS(zLength,s, sp, z, zp, e0, b1, b2, MatrixDimension, ParaCntr, ZCnt
 			REAL(8), DIMENSION(3)::v1, v2
 		END SUBROUTINE
 
-		SUBROUTINE greenMatrix(MatrixDimension, ParaCntr, ZCntr, nmax, kparallel, b1, b2, nVert, gMatrix, rz, faceNum, nmallow, rd)
-			INTEGER, INTENT(IN)::MatrixDimension, ParaCntr, ZCntr, nmax, faceNum
+		REAL(8)	FUNCTION VQ(k)
+			REAL(8), DIMENSION(3), INTENT(IN)::k
+			REAL(8)::b1, b2, b3, b4
+		END FUNCTION
+
+		SUBROUTINE greenMatrix(MatrixDimension, ParaCntr, ZCntr, nmax, kparallel, b1, b2, nVert, gMatrix, rz,&
+		 faceNum, nmallow, rd, kpcount, e0)
+			INTEGER, INTENT(IN)::MatrixDimension, ParaCntr, ZCntr, nmax, faceNum, kpcount
+			REAL(8), INTENT(IN)::e0
 			REAL(8), INTENT(IN), DIMENSION(3)::b1, b2, kparallel
 			INTEGER, INTENT(IN), DIMENSION(ParaCntr, 2)::nmallow
 			REAL(8), INTENT(IN), ALLOCATABLE, DIMENSION(:,:)::nVert
 			REAL(8), INTENT(IN), DIMENSION(MatrixDimension)::rd
 			REAL(8), INTENT(IN), DIMENSION(MatrixDimension, MatrixDimension)::rz
-			COMPLEX(8), INTENT(OUT), DIMENSION(6*MatrixDimension*((2*nmax)+1), 6*MatrixDimension*((2*nmax)+1))::gMatrix
+			COMPLEX(8), INTENT(OUT), DIMENSION(faceNum*MatrixDimension*((2*nmax)+1), faceNum*MatrixDimension*((2*nmax)+1))::gMatrix
 			REAL(8), DIMENSION(3)::v1, v2
 			INTEGER::dim1, dim2, j, h, kn, n, face
-			COMPLEX(8), DIMENSION(6*MatrixDimension*((2*nmax)+1), MatrixDimension)::fmu
+			COMPLEX(8), DIMENSION(faceNum*MatrixDimension*((2*nmax)+1), MatrixDimension)::fmu
 			COMPLEX(8)::fourierConst, eMult, i, cn
 			REAL(8)::pi, energy, alpha
 			REAL(8), DIMENSION(3)::kG
@@ -555,13 +562,15 @@ SUBROUTINE DOS(zLength,s, sp, z, zp, e0, b1, b2, MatrixDimension, ParaCntr, ZCnt
 	REAL(8), DIMENSION(3)::kparallel, KK
 	REAL(8)::sw
 	REAL(8), allocatable :: spk(:,:),wspk(:)
-	COMPLEX(8), DIMENSION(6*MatrixDimension*((2*nmax)+1),6*MatrixDimension*((2*nmax)+1))::gMatrix
-	COMPLEX(8), DIMENSION(6*MatrixDimension*((2*nmax)+1))::bSetVec1, bSetVec2
+	COMPLEX(8), DIMENSION(faceNum*MatrixDimension*((2*nmax)+1), faceNum*MatrixDimension*((2*nmax)+1))::gMatrix
+	COMPLEX(8), DIMENSION(faceNum*MatrixDimension*((2*nmax)+1))::bSetVec1, bSetVec2
 	
 	KK=(b1-b2)/3.0d0
 	kparallel(1:3)=0.0d0
-	
+	face=1
+
 	open(unit=3, file='densityOfStates.txt')
+	open(unit=4, file='GreensMatrix.txt')
 	i=(0.0d0, 1.0d0)
 	!find k points to use for integration using Simon's subroutines
 	!loop through k points and account for weightings
@@ -571,44 +580,50 @@ SUBROUTINE DOS(zLength,s, sp, z, zp, e0, b1, b2, MatrixDimension, ParaCntr, ZCnt
   write(*,*)' enter approximate no. of sampling points wanted'
   write(*,*)' in 1/12th irreducible zone'
   read(*,*)nspk
-  call specialk(b1,b2,spk,wspk,nspk,nspkm,1)
-	write(*,*)nspk
+  call specialk(b1,b2,spk,wspk,nspk,nspkm,0)
+	write(*,*)nspk, wspk(1)
 	allocate(Green(nspk))
-	!$OMP DO
+
+!$OMP PARALLEL DO PRIVATE(kparallel, Energy)
 	do kpcount=1, nspk
 		kparallel(1)=spk(1, kpcount)
 		kparallel(2)=spk(2, kpcount)
 		kparallel(3)=0.0d0
-		call GreenMatrix(MatrixDimension, ParaCntr, ZCntr, nmax, kparallel, b1, b2, nVert, gMatrix, rz, faceNum, nmallow, rd)
+		!write(*,*)kparallel, spk(1,kpcount), spk(2, kpcount)
+		Energy=0.5d0*dot_product(kparallel, kparallel)+VQ(kparallel)
+		write(*,*)Energy-e0
+		call GreenMatrix(MatrixDimension, ParaCntr, ZCntr, nmax, kparallel, b1, b2, nVert, gMatrix, rz, faceNum, nmallow, rd, kpcount, e0)
 		write(*,*)'Greens Matrix Done'
-		call basisSetVectorFill(s, z, zLength, face, bsetVec1, ParaCntr, ZCntr, nmax, MatrixDimension, nvert) !basis set at rs
-		call basisSetVectorFill(sp, zp, zLength, face, bsetVec2, ParaCntr, ZCntr, nmax, MatrixDimension, nvert) !basis set at rsp
-
+		call basisSetVectorFill(s, z, zLength, face, bsetVec1, ParaCntr, ZCntr, nmax, MatrixDimension, nvert, faceNum) !basis set at rs
+		call basisSetVectorFill(sp, zp, zLength, face, bsetVec2, ParaCntr, ZCntr, nmax, MatrixDimension, nvert, faceNum) !basis set at rsp
+    write(*,*)'Basis vectors found'
 		Green(kpcount)=(0.0d0, 0.0d0)
 
-		do j=1, (6*MatrixDimension*((2*nmax)+1))
-			do l=1, (6*MatrixDimension*((2*nmax)+1))
+		do j=1, (faceNum*MatrixDimension*((2*nmax)+1))
+			do l=1, (faceNum*MatrixDimension*((2*nmax)+1))
 				Green(kpcount)=Green(kpcount)+bsetVec1(j)*CONJG(bsetVec2(l))*gMatrix(j, l)*wspk(kpcount)
-				write(*,*)Green(kpcount)
+				!write(*,*)Green(kpcount)
 			end do
 		end do
-		write(*,*) Energy-e0
-		write(3, *) Energy-e0, aimag(Green(kpcount))
+		write(3, *) Energy-e0+(i*e0/100.0d0), aimag(Green(kpcount))
 	end do
-	!$OMP END DO
-	close(3)
+!$OMP END PARALLEL DO
 
+
+	close(3)
+	close(4)
 END SUBROUTINE
 
 SUBROUTINE embedPotential(embeddingPotential, b1, b2, kparallel, s, sp, z, zp, MatrixDimension, ParaCntr, ZCntr, nmax, &
-faceNum, nVert, rz, nmallow, zLength, rd)
+faceNum, nVert, rz, nmallow, zLength, rd, e0)
 !when called this subroutine will find the embedding potential giving to input coordinates r & rp
+!THIS SUBROUTINE NEEDS TO BE FIXED FOR 3D INVERSE MATRIX
 	IMPLICIT NONE
 
 	INTERFACE
-		SUBROUTINE basisSetVectorFill(s, z, zLength, face, bSetVec, ParaCntr, ZCntr, nmax, MatrixDimension, nvert)
-			INTEGER, INTENT(IN)::ParaCntr, ZCntr, nmax, face, MatrixDimension
-			COMPLEX(8), INTENT(OUT), DIMENSION(6*MatrixDimension*((2*nmax)+1))::bSetVec
+		SUBROUTINE basisSetVectorFill(s, z, zLength, face, bSetVec, ParaCntr, ZCntr, nmax, MatrixDimension, nvert, faceNum)
+			INTEGER, INTENT(IN)::ParaCntr, ZCntr, nmax, face, MatrixDimension, faceNum
+			COMPLEX(8), INTENT(OUT), DIMENSION(faceNum*MatrixDimension*((2*nmax)+1))::bSetVec
 			REAL(8), INTENT(IN)::s, z, zLength
 			REAL(8), ALLOCATABLE, DIMENSION(:,:), INTENT(IN)::nVert
 			INTEGER::faceTot, h, kz, n
@@ -617,17 +632,19 @@ faceNum, nVert, rz, nmallow, zLength, rd)
 			REAL(8), DIMENSION(3)::v1, v2
 		END SUBROUTINE
 
-		SUBROUTINE greenMatrix(MatrixDimension, ParaCntr, ZCntr, nmax, kparallel, b1, b2, nVert, gMatrix, rz, faceNum, nmallow, rd)
-			INTEGER, INTENT(IN)::MatrixDimension, ParaCntr, ZCntr, nmax, faceNum
+		SUBROUTINE greenMatrix(MatrixDimension, ParaCntr, ZCntr, nmax, kparallel, b1, b2, nVert, gMatrix,&
+		 rz, faceNum, nmallow, rd, kpcount, e0)
+			INTEGER, INTENT(IN)::MatrixDimension, ParaCntr, ZCntr, nmax, faceNum, kpcount
+			REAL(8), INTENT(IN)::e0	
 			REAL(8), INTENT(IN), DIMENSION(3)::b1, b2, kparallel
 			INTEGER, INTENT(IN), DIMENSION(ParaCntr, 2)::nmallow
 			REAL(8), INTENT(IN), ALLOCATABLE, DIMENSION(:,:)::nVert
 			REAL(8), INTENT(IN), DIMENSION(MatrixDimension)::rd
 			REAL(8), INTENT(IN), DIMENSION(MatrixDimension, MatrixDimension)::rz
-			COMPLEX(8), INTENT(OUT), DIMENSION(6*MatrixDimension*((2*nmax)+1), 6*MatrixDimension*((2*nmax)+1))::gMatrix
+			COMPLEX(8), INTENT(OUT), DIMENSION(faceNum*MatrixDimension*((2*nmax)+1), faceNum*MatrixDimension*((2*nmax)+1))::gMatrix
 			REAL(8), DIMENSION(3)::v1, v2
 			INTEGER::dim1, dim2, j, h, kn, n, face
-			COMPLEX(8), DIMENSION(6*MatrixDimension*((2*nmax)+1), MatrixDimension)::fmu
+			COMPLEX(8), DIMENSION(faceNum*MatrixDimension*((2*nmax)+1), MatrixDimension)::fmu
 			COMPLEX(8)::fourierConst, eMult, i, cn
 			REAL(8)::pi, energy, alpha
 			REAL(8), DIMENSION(3)::kG
@@ -639,7 +656,7 @@ faceNum, nVert, rz, nmallow, zLength, rd)
 		END FUNCTION
 	END INTERFACE
 	
-	REAL(8), INTENT(IN)::zLength, s, sp, z, zp
+	REAL(8), INTENT(IN)::zLength, s, sp, z, zp, e0
 	COMPLEX(8), INTENT(OUT)::embeddingPotential
 	REAL(8), INTENT(IN), DIMENSION(3)::b1, b2, kparallel
 	INTEGER, INTENT(IN)::MatrixDimension, ParaCntr, ZCntr, nmax, faceNum
@@ -649,25 +666,28 @@ faceNum, nVert, rz, nmallow, zLength, rd)
 	INTEGER, INTENT(IN), DIMENSION(ParaCntr, 2)::nmallow
 
 	REAL(8), DIMENSION(3)::v1, v2, normVec
-	COMPLEX(8), DIMENSION(6*MatrixDimension*((2*nmax)+1),6*MatrixDimension*((2*nmax)+1))::gMatrix, invgMatrix	
-	COMPLEX(8), DIMENSION(6*MatrixDimension*((2*nmax)+1))::bsetVec1, bsetVec2, bsetVec3
+	COMPLEX(8), DIMENSION(faceNum*MatrixDimension*((2*nmax)+1), faceNum*MatrixDimension*((2*nmax)+1))::gMatrix, invgMatrix	
+	COMPLEX(8), ALLOCATABLE, DIMENSION(:,:)::invgMatrixK
+	COMPLEX(8), DIMENSION(faceNum*MatrixDimension*((2*nmax)+1))::bsetVec1, bsetVec2, bsetVec3
 	COMPLEX(8)::invGreen, derivGreen, invintGreen, intGreen, i
 	REAL(8)::faceLength, pArea, spp, zpp
-	INTEGER:: j, l, m, h, face
+	INTEGER:: j, l, m, h, face, kpcount
 	!gMatrix contains a loop through fourier coefficients within a loop through kz within a loop through nmallow within a loop over the faces of the surface
 	i=(0.0d0, 1.0d0)
-	call GreenMatrix(MatrixDimension, ParaCntr, ZCntr, nmax, kparallel, b1, b2, nVert, gMatrix, rz, faceNum, nmallow, rd)
+	kpcount=1
 
-	call basisSetVectorFill(s, z, zLength, face, bsetVec1, ParaCntr, ZCntr, nmax, MatrixDimension, nvert) !basis set at rs
-	call basisSetVectorFill(sp, zp, zLength, face, bsetVec2, ParaCntr, ZCntr, nmax, MatrixDimension, nvert) !basis set at rsp
+	call GreenMatrix(MatrixDimension, ParaCntr, ZCntr, nmax, kparallel, b1, b2, nVert, gMatrix, rz, faceNum, nmallow, rd, kpcount, e0)
+
+	call basisSetVectorFill(s, z, zLength, face, bsetVec1, ParaCntr, ZCntr, nmax, MatrixDimension, nvert, faceNum) !basis set at rs
+	call basisSetVectorFill(sp, zp, zLength, face, bsetVec2, ParaCntr, ZCntr, nmax, MatrixDimension, nvert, faceNum) !basis set at rsp
 	!code is carried out assuming that matrices can be inverted
-		
+	
 	invgMatrix=inv(gMatrix)!should give the inverse gMatrix
 	invGreen=(0.0d0, 0.0d0)
 
 	!should give the inverse greens function outside of the integral for the embedding potential
-	do j=1, (6*MatrixDimension*((2*nmax)+1))
-		do l=1, (6*MatrixDimension*((2*nmax)+1))
+	do j=1, (faceNum*MatrixDimension*((2*nmax)+1))
+		do l=1, (faceNum*MatrixDimension*((2*nmax)+1))
 			invGreen=invGreen+bsetVec1(j)*CONJG(bsetVec2(l))*invgMatrix(j, l)
 		end do
 	end do
@@ -708,9 +728,9 @@ faceNum, nVert, rz, nmallow, zLength, rd)
 			do l=0,100
 				invintGreen=(0.0d0, 0.0d0)
 				derivGreen=(0.0d0, 0.0d0)
-				call basisSetVectorFill(spp, zpp, zLength, face, bsetVec3, ParaCntr, ZCntr, nmax, MatrixDimension, nvert) 
-				do h=1, 6*MatrixDimension*((2*nmax)+1)
-					do m=1, 6*MatrixDimension*((2*nmax)+1)
+				call basisSetVectorFill(spp, zpp, zLength, face, bsetVec3, ParaCntr, ZCntr, nmax, MatrixDimension, nvert, faceNum) 
+				do h=1, faceNum*MatrixDimension*((2*nmax)+1)
+					do m=1, faceNum*MatrixDimension*((2*nmax)+1)
 						!basis set at rspp changes as the integral goes round the surface, has to be called for each point evaluated.
 
 
@@ -749,11 +769,11 @@ faceNum, nVert, rz, nmallow, zLength, rd)
 	
 END SUBROUTINE
 
-SUBROUTINE basisSetVectorFill(s, z, zLength, face, bSetVec, ParaCntr, ZCntr, nmax, MatrixDimension, nvert)
+SUBROUTINE basisSetVectorFill(s, z, zLength, face, bSetVec, ParaCntr, ZCntr, nmax, MatrixDimension, nvert, faceNum)
 		
 	IMPLICIT NONE
-	INTEGER, INTENT(IN)::ParaCntr, ZCntr, nmax, face, MatrixDimension
-	COMPLEX(8), INTENT(OUT), DIMENSION(6*MatrixDimension*((2*nmax)+1))::bSetVec
+	INTEGER, INTENT(IN)::ParaCntr, ZCntr, nmax, face, MatrixDimension, faceNum
+	COMPLEX(8), INTENT(OUT), DIMENSION(faceNum*MatrixDimension*((2*nmax)+1))::bSetVec
 	REAL(8), INTENT(IN)::s, z, zLength
 	REAL(8), ALLOCATABLE, DIMENSION(:,:), INTENT(IN)::nVert
 
@@ -774,14 +794,16 @@ SUBROUTINE basisSetVectorFill(s, z, zLength, face, bSetVec, ParaCntr, ZCntr, nma
 		!h doesn't actually get used in the equation, but having this here makes it easier to follow the loops
 		do kz=1, ZCntr
 			do n=-nmax, nmax
-				bSetVec(((face-1)*faceTot)+n)=exp(i*2*n*pi*s)*sin(real(kz, 8)*pi*(z+(zLength/2))/zLength)
+				!bSetVec(((face-1)*faceTot)+n)=exp(i*2*n*pi*s)*sin(real(kz, 8)*pi*(z+(zLength/2))/zLength)
+				bSetVec(((2*nmax+1)*(kz-1))+(ZCntr*(h-1))+n+nmax+1)=exp(i*2*n*pi*s)*sin(real(kz, 8)*pi*(z+(zLength/2))/zLength)!should address right input for facenum=1
 			end do
 		end do
 	end do
 	
 END SUBROUTINE
 
-SUBROUTINE greenMatrix(MatrixDimension, ParaCntr, ZCntr, nmax, kparallel, b1, b2, nVert, gMatrix, rz, faceNum, nmallow, rd)
+SUBROUTINE greenMatrix(MatrixDimension, ParaCntr, ZCntr, nmax, kparallel, b1, b2, nVert, gMatrix, rz, faceNum, nmallow, &
+	rd, kpcount, e0)
 	IMPLICIT NONE
 
 	INTERFACE
@@ -791,23 +813,24 @@ SUBROUTINE greenMatrix(MatrixDimension, ParaCntr, ZCntr, nmax, kparallel, b1, b2
 		END FUNCTION
 	END INTERFACE
 
-	INTEGER, INTENT(IN)::MatrixDimension, ParaCntr, ZCntr, nmax, faceNum
+	INTEGER, INTENT(IN)::MatrixDimension, ParaCntr, ZCntr, nmax, faceNum, kpcount
+	REAL(8), INTENT(IN)::e0
 	REAL(8), INTENT(IN), DIMENSION(3)::b1, b2, kparallel
 	INTEGER, INTENT(IN), DIMENSION(ParaCntr, 2)::nmallow
 	REAL(8), INTENT(IN), ALLOCATABLE, DIMENSION(:,:)::nVert
 	REAL(8), INTENT(IN), DIMENSION(MatrixDimension)::rd
 	REAL(8), INTENT(IN), DIMENSION(MatrixDimension, MatrixDimension)::rz
-	COMPLEX(8), INTENT(OUT), DIMENSION(6*MatrixDimension*((2*nmax)+1), 6*MatrixDimension*((2*nmax)+1))::gMatrix
+	COMPLEX(8), INTENT(OUT), DIMENSION(faceNum*MatrixDimension*((2*nmax)+1), faceNum*MatrixDimension*((2*nmax)+1))::gMatrix	
 
 	REAL(8), DIMENSION(3)::v1, v2
 	INTEGER::dim1, dim2, j, h, kn, n, face
-	COMPLEX(8), DIMENSION(6*MatrixDimension*((2*nmax)+1), MatrixDimension)::fmu
+	COMPLEX(8), DIMENSION(faceNum*MatrixDimension*((2*nmax)+1), MatrixDimension)::fmu
 	COMPLEX(8)::fourierConst, eMult, i, cn, energy
 	REAL(8)::pi, alpha
 	REAL(8), DIMENSION(3)::kG
 	
 	pi=4.0d0*atan(1.0d0)
-	i=(0.0d0,0.0d0)
+	i=(0.0d0,1.0d0)
 	do face=1, faceNum
 		v1(1:3)=nVert(1:3, face)
 		v2(1:3)=nVert(1:3, face+1)
@@ -822,23 +845,39 @@ SUBROUTINE greenMatrix(MatrixDimension, ParaCntr, ZCntr, nmax, kparallel, b1, b2
 					do n=-nmax, nmax
 						eMult=i*(alpha-(2*pi*n))
 						fourierConst=(exp(eMult)-1)/eMult
+						if (isnan(real(fourierConst, 8))) then	!limit of previous line in the case that emult=0
+							fourierConst=(0.0d0, 1.0d0)
+						end if
 						fourierConst=fourierConst*exp(i*dot_product(kG, v1))
 						fmu(n+nmax+1+((kn-1)*((2*nmax)+1))+((h-1)*ZCntr)+(face-1)*MatrixDimension, j)=fourierConst*cn
+						if (isnan(real(fmu(n+nmax+1+((kn-1)*((2*nmax)+1))+((h-1)*ZCntr)+(face-1)*MatrixDimension, j)))) then
+							write(*,*)'NAN'
+							write(*,*)alpha, eMult, (2*pi*n)
+							stop
+						end if
 					end do
 				end do
 			end do
 		end do
 	end do
 	write(*,*)'Energy calculation'
-	energy=(0.5*dot_product(kparallel, kparallel))+VQ(kparallel)
-	do dim1=1, 6*MatrixDimension*((2*nmax)+1)
-		do dim2=1, 6*MatrixDimension*((2*nmax)+1)
+	energy=(0.5*dot_product(kparallel, kparallel))+VQ(kparallel)+(i*e0/100.0d0)
+	do dim1=1, faceNum*MatrixDimension*((2*nmax)+1)
+		do dim2=1, faceNum*MatrixDimension*((2*nmax)+1)
 			do j=1, MatrixDimension	
 				gMatrix(dim1,dim2)=gMatrix(dim1,dim2)+(fmu(dim1,j)*CONJG(fmu(dim2, j))/(rd(j)-energy))
 			end do
+			!write(4,*)kparallel(1), kparallel(2), dim1, dim2, gMatrix(dim1, dim2)
+			!write(*,*)gMatrix(dim1, dim2)
 		end do
-		write(*,*) dim1, 6*MatrixDimension*((2*nmax)+1)
+		!write(*,*) dim1, faceNum*MatrixDimension*((2*nmax)+1)
 	end do
+
+!	do dim1=1, faceNum*MatrixDimension*((2*nmax)+1)
+!		do dim2=1, faceNum*MatrixDimension*((2*nmax)+1)
+			!write(4,*)kparallel(1), kparallel(2), dim1, dim2, gMatrix(dim1, dim2)
+!		end do
+!	end do
 	
 END SUBROUTINE
 
